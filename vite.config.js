@@ -5,4 +5,9 @@ export default defineConfig({
   plugins: [
     uni(),
   ],
+  build: {
+    rollupOptions: {
+      external: ['@vant/weapp']
+    }
+  }
 })
