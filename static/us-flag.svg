@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#fff"/>
+  <g fill="#bf0a30">
+    <rect width="512" height="39.4" y="0"/>
+    <rect width="512" height="39.4" y="78.8"/>
+    <rect width="512" height="39.4" y="157.5"/>
+    <rect width="512" height="39.4" y="236.3"/>
+    <rect width="512" height="39.4" y="315"/>
+    <rect width="512" height="39.4" y="393.8"/>
+    <rect width="512" height="39.4" y="472.5"/>
+  </g>
+  <rect width="256" height="275.1" fill="#002868"/>
+  <g fill="#fff">
+    <circle cx="24" cy="24" r="8"/>
+    <circle cx="72" cy="24" r="8"/>
+    <circle cx="120" cy="24" r="8"/>
+    <circle cx="168" cy="24" r="8"/>
+    <circle cx="216" cy="24" r="8"/>
+    <circle cx="48" cy="48" r="8"/>
+    <circle cx="96" cy="48" r="8"/>
+    <circle cx="144" cy="48" r="8"/>
+    <circle cx="192" cy="48" r="8"/>
+    <circle cx="240" cy="48" r="8"/>
+    <circle cx="24" cy="72" r="8"/>
+    <circle cx="72" cy="72" r="8"/>
+    <circle cx="120" cy="72" r="8"/>
+    <circle cx="168" cy="72" r="8"/>
+    <circle cx="216" cy="72" r="8"/>
+    <circle cx="48" cy="96" r="8"/>
+    <circle cx="96" cy="96" r="8"/>
+    <circle cx="144" cy="96" r="8"/>
+    <circle cx="192" cy="96" r="8"/>
+    <circle cx="240" cy="96" r="8"/>
+    <circle cx="24" cy="120" r="8"/>
+    <circle cx="72" cy="120" r="8"/>
+    <circle cx="120" cy="120" r="8"/>
+    <circle cx="168" cy="120" r="8"/>
+    <circle cx="216" cy="120" r="8"/>
+    <circle cx="48" cy="144" r="8"/>
+    <circle cx="96" cy="144" r="8"/>
+    <circle cx="144" cy="144" r="8"/>
+    <circle cx="192" cy="144" r="8"/>
+    <circle cx="240" cy="144" r="8"/>
+    <circle cx="24" cy="168" r="8"/>
+    <circle cx="72" cy="168" r="8"/>
+    <circle cx="120" cy="168" r="8"/>
+    <circle cx="168" cy="168" r="8"/>
+    <circle cx="216" cy="168" r="8"/>
+    <circle cx="48" cy="192" r="8"/>
+    <circle cx="96" cy="192" r="8"/>
+    <circle cx="144" cy="192" r="8"/>
+    <circle cx="192" cy="192" r="8"/>
+    <circle cx="240" cy="192" r="8"/>
+    <circle cx="24" cy="216" r="8"/>
+    <circle cx="72" cy="216" r="8"/>
+    <circle cx="120" cy="216" r="8"/>
+    <circle cx="168" cy="216" r="8"/>
+    <circle cx="216" cy="216" r="8"/>
+    <circle cx="48" cy="240" r="8"/>
+    <circle cx="96" cy="240" r="8"/>
+    <circle cx="144" cy="240" r="8"/>
+    <circle cx="192" cy="240" r="8"/>
+    <circle cx="240" cy="240" r="8"/>
+  </g>
+</svg>

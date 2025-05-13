@@ -260,11 +260,10 @@ const startLearning = () => {
       icon: 'success'
     });
 
-    // 这里可以添加跳转到学习页面的逻辑
-    // 例如：
-    // uni.navigateTo({
-    //   url: `/pages/word/study?libraryId=${selectedLibraryId.value}`
-    // });
+    // 跳转到学习页面
+    uni.navigateTo({
+      url: `/pages/word/study?libraryId=${selectedLibraryId.value}&libraryName=${encodeURIComponent(selectedLibrary.name)}`
+    });
   }
 };
 

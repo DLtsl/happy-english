@@ -11,6 +11,12 @@
 			"style": {
 				"navigationBarTitleText": "单词学习"
 			}
+		},
+		{
+			"path": "pages/word/study",
+			"style": {
+				"navigationBarTitleText": "单词详情"
+			}
 		}
 	],
 	"globalStyle": {
