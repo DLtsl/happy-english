@@ -102,7 +102,6 @@ export default {
     }
   },
   onLoad() {
-    // 这里后续添加数据获取逻辑
   },
   methods: {
     // 后续添加交互方法

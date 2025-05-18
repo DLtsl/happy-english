@@ -1,4 +1,5 @@
 <script>
+// const db = wx.cloud.database()
 export default {
   onLaunch: function () {
     console.log('App Launch')

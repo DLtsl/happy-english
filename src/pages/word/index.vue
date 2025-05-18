@@ -14,8 +14,8 @@
       </view>
     </view>
 
-    <!-- 分类标签 -->
-    <view class="category-tabs">
+    <!-- 分类标签（暂时隐藏） -->
+    <!-- <view class="category-tabs">
       <view
         v-for="(category, index) in categories"
         :key="index"
@@ -25,7 +25,7 @@
       >
         <text class="category-text">{{ category }}</text>
       </view>
-    </view>
+    </view> -->
 
     <!-- 词库列表 -->
     <scroll-view scroll-y class="library-list">
@@ -33,12 +33,14 @@
         v-for="(library, index) in filteredLibraries"
         :key="index"
         class="library-card glass-effect"
-        :class="{ 'library-card-selected': selectedLibraryId === library.id }"
+        :class="{ 'library-card-selected': selectedLibraryId === (library._id || library.id) }"
         @click="selectLibrary(library)"
       >
         <view class="library-header">
+          <!-- 使用封面图替代图标 -->
           <view class="library-icon" :class="library.color">
-            <text class="icon-text">{{ library.icon }}</text>
+            <image v-if="library.coverImage" class="icon-image" :src="library.coverImage" mode="aspectFill"></image>
+            <text v-else class="icon-text">{{ library.icon }}</text>
           </view>
           <view class="library-info">
             <text class="library-name">{{ library.name }}</text>
@@ -75,15 +77,21 @@
             </view>
           </view>
         </view>
+
+        <!-- 立即学习按钮 -->
+        <view class="learn-now-button" @click.stop="startLearningLibrary(library)">
+          <text class="learn-now-text">立即学习</text>
+          <text class="learn-now-icon">→</text>
+        </view>
       </view>
     </scroll-view>
 
-    <!-- 底部按钮 -->
-    <view v-if="selectedLibraryId" class="bottom-button start-button" @click="startLearning">
+    <!-- 底部按钮（暂时隐藏） -->
+    <!-- <view v-if="selectedLibraryId" class="bottom-button start-button" @click="startLearning">
       <text class="button-icon">▶️</text>
       <text class="button-text">开始学习</text>
-    </view>
-    <view v-else class="bottom-button" @click="createCustomLibrary">
+    </view> -->
+    <view class="bottom-button" @click="createCustomLibrary">
       <text class="button-icon">➕</text>
       <text class="button-text">创建自定义词库</text>
     </view>
@@ -92,128 +100,29 @@
 
 <script setup>
 import { ref, computed } from 'vue';
+import { onLoad } from '@dcloudio/uni-app'
 
-// 分类数据
-const categories = ['全部', '考试', '日常', '专业', '自定义'];
-const activeCategory = ref(0);
+// 搜索数据
 const searchQuery = ref('');
 const selectedLibraryId = ref(null); // 当前选中的词库ID
 
-// 词库数据
-const libraries = ref([
-  {
-    id: 1,
-    name: '四级核心词汇',
-    icon: '📚',
-    color: 'blue',
-    wordCount: 2500,
-    learnedCount: 1200,
-    masteredCount: 800,
-    accuracy: 92,
-    difficulty: '中级',
-    category: '考试'
-  },
-  {
-    id: 2,
-    name: '六级核心词汇',
-    icon: '📝',
-    color: 'purple',
-    wordCount: 3000,
-    learnedCount: 800,
-    masteredCount: 500,
-    accuracy: 88,
-    difficulty: '中高级',
-    category: '考试'
-  },
-  {
-    id: 3,
-    name: '托福核心词汇',
-    icon: '🎓',
-    color: 'orange',
-    wordCount: 5000,
-    learnedCount: 1500,
-    masteredCount: 1000,
-    accuracy: 85,
-    difficulty: '高级',
-    category: '考试'
-  },
-  {
-    id: 4,
-    name: '雅思词汇',
-    icon: '🌟',
-    color: 'green',
-    wordCount: 4500,
-    learnedCount: 1200,
-    masteredCount: 700,
-    accuracy: 82,
-    difficulty: '高级',
-    category: '考试'
-  },
-  {
-    id: 5,
-    name: '日常交流词汇',
-    icon: '💬',
-    color: 'teal',
-    wordCount: 1500,
-    learnedCount: 900,
-    masteredCount: 600,
-    accuracy: 95,
-    difficulty: '初级',
-    category: '日常'
-  },
-  {
-    id: 6,
-    name: '商务英语词汇',
-    icon: '💼',
-    color: 'indigo',
-    wordCount: 2000,
-    learnedCount: 500,
-    masteredCount: 300,
-    accuracy: 78,
-    difficulty: '中级',
-    category: '专业'
-  },
-  {
-    id: 7,
-    name: 'IT专业词汇',
-    icon: '💻',
-    color: 'gray',
-    wordCount: 1800,
-    learnedCount: 400,
-    masteredCount: 200,
-    accuracy: 75,
-    difficulty: '中高级',
-    category: '专业'
-  },
-  {
-    id: 8,
-    name: '我的收藏词汇',
-    icon: '❤️',
-    color: 'red',
-    wordCount: 120,
-    learnedCount: 80,
-    masteredCount: 50,
-    accuracy: 90,
-    difficulty: '混合',
-    category: '自定义'
-  }
-]);
+// 分类数据（暂时不使用）
+// const categories = ['全部', '考试', '日常', '专业', '自定义'];
+// const activeCategory = ref(0);
 
-// 根据分类和搜索过滤词库
+// 词库数据
+const libraries = ref([]);
+
+// 根据搜索过滤词库
 const filteredLibraries = computed(() => {
   let result = libraries.value;
-
-  // 按分类过滤
-  if (activeCategory.value > 0) {
-    result = result.filter(lib => lib.category === categories[activeCategory.value]);
-  }
 
   // 按搜索词过滤
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase();
     result = result.filter(lib =>
       lib.name.toLowerCase().includes(query) ||
-      lib.category.toLowerCase().includes(query)
+      (lib.category && lib.category.toLowerCase().includes(query))
     );
   }
 
@@ -224,8 +133,11 @@ const filteredLibraries = computed(() => {
 const selectLibrary = (library) => {
   console.log('选择词库:', library.name);
 
+  // 获取词库ID（优先使用 _id，如果没有则使用 id）
+  const libraryId = library._id || library.id;
+
   // 如果已经选中了这个词库，则取消选中
-  if (selectedLibraryId.value === library.id) {
+  if (selectedLibraryId.value === libraryId) {
     selectedLibraryId.value = null;
     uni.showToast({
       title: `已取消选择`,
@@ -233,7 +145,7 @@ const selectLibrary = (library) => {
     });
   } else {
     // 否则选中这个词库
-    selectedLibraryId.value = library.id;
+    selectedLibraryId.value = libraryId;
     uni.showToast({
       title: `已选择: ${library.name}`,
       icon: 'none'
@@ -250,22 +162,34 @@ const createCustomLibrary = () => {
   });
 };
 
-// 开始学习
-const startLearning = () => {
-  const selectedLibrary = libraries.value.find(lib => lib.id === selectedLibraryId.value);
-  if (selectedLibrary) {
-    console.log('开始学习:', selectedLibrary.name);
-    uni.showToast({
-      title: `开始学习: ${selectedLibrary.name}`,
-      icon: 'success'
-    });
+// 立即学习指定词库
+const startLearningLibrary = (library) => {
+  console.log('开始学习:', library.name);
 
-    // 跳转到学习页面
-    uni.navigateTo({
-      url: `/pages/word/study?libraryId=${selectedLibraryId.value}&libraryName=${encodeURIComponent(selectedLibrary.name)}`
-    });
+  // 获取词库ID（优先使用 _id，如果没有则使用 id）
+  const libraryId = library._id || library.id;
+
+  // 显示提示
+  uni.showToast({
+    title: `开始学习: ${library.name}`,
+    icon: 'success'
+  });
+
+  // 跳转到学习页面
+  uni.navigateTo({
+    url: `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}`
+  });
+};
+
+// 开始学习（底部按钮，现在已隐藏，暂时保留代码供参考）
+/*
+const startLearning = () => {
+  const selectedLibrary = libraries.value.find(lib => lib._id === selectedLibraryId.value || lib.id === selectedLibraryId.value);
+  if (selectedLibrary) {
+    startLearningLibrary(selectedLibrary);
   }
 };
+*/
 
 // 将中文难度转换为英文类名
 const getDifficultyClass = (difficulty) => {
@@ -278,6 +202,33 @@ const getDifficultyClass = (difficulty) => {
   };
   return map[difficulty] || 'intermediate';
 };
+
+onLoad(() => {
+  // 显示加载中提示
+  uni.showLoading({
+    title: '加载词库中...'
+  });
+
+  // 调用云函数获取词库列表
+  wx.cloud.callFunction({
+    name: 'getThesaurusList'
+  })
+  .then(res => {
+    console.log("获取数据", res.result.data);
+    // 将获取的数据赋值给 libraries
+    libraries.value = res.result.data;
+    // 隐藏加载提示
+    uni.hideLoading();
+  })
+  .catch(err => {
+    console.error("获取词库列表失败", err);
+    uni.hideLoading();
+    uni.showToast({
+      title: '获取词库列表失败',
+      icon: 'none'
+    });
+  });
+})
 </script>
 
 <style>
@@ -389,6 +340,7 @@ const getDifficultyClass = (difficulty) => {
   transition: all 0.3s ease;
   position: relative;
   border: 3rpx solid transparent;
+  overflow: hidden;
 }
 
 .library-card:active {
@@ -416,6 +368,15 @@ const getDifficultyClass = (difficulty) => {
   font-size: 30rpx;
   font-weight: bold;
   box-shadow: 0 4rpx 8rpx rgba(0, 0, 0, 0.1);
+  z-index: 2;
+}
+
+/* 图标图片样式 */
+.icon-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 20rpx;
+  object-fit: cover;
 }
 
 .library-header {
@@ -439,18 +400,22 @@ const getDifficultyClass = (difficulty) => {
 
 .library-info {
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .library-name {
   font-size: 34rpx;
   font-weight: bold;
   color: #1f2937;
-  margin-bottom: 6rpx;
+  margin-bottom: 10rpx;
+  line-height: 1.2;
 }
 
 .library-count {
   font-size: 26rpx;
   color: #6b7280;
+  line-height: 1.2;
 }
 
 .library-badge {
@@ -529,6 +494,34 @@ const getDifficultyClass = (difficulty) => {
   height: 100%;
   background: rgba(255,255,255,0.3);
   filter: blur(4rpx);
+}
+
+/* 立即学习按钮样式 */
+.learn-now-button {
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  padding: 20rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  margin-top: 20rpx;
+  transition: all 0.3s ease;
+}
+
+.learn-now-button:active {
+  transform: scale(0.98);
+}
+
+.learn-now-text {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.learn-now-icon {
+  font-size: 28rpx;
+  color: #ffffff;
 }
 
 /* Bottom button styles */
