@@ -240,34 +240,6 @@ const checkLoginStatus = () => {
   }
 };
 
-// 获取用户词库学习进度
-const getUserLibraryProgress = async () => {
-  if (!isLoggedIn.value) {
-    console.log('用户未登录，不获取学习进度');
-    return;
-  }
-
-  try {
-    uni.showLoading({ title: '获取学习进度...' });
-
-    const res = await wx.cloud.callFunction({
-      name: 'getLibraryProgress'
-    });
-
-    uni.hideLoading();
-
-    if (res.result.code === 0 && res.result.data) {
-      console.log('获取用户词库学习进度成功:', res.result.data);
-      userProgress.value = res.result.data;
-    } else {
-      console.error('获取用户词库学习进度失败:', res.result.message);
-    }
-  } catch (error) {
-    uni.hideLoading();
-    console.error('获取用户词库学习进度失败:', error);
-  }
-};
-
 // 加载词库数据和用户进度
 const loadLibraryData = async (showLoading = true) => {
   if (showLoading) {
@@ -280,19 +252,40 @@ const loadLibraryData = async (showLoading = true) => {
   // 检查用户登录状态
   const isUserLoggedIn = checkLoginStatus();
 
-  // 调用云函数获取词库列表
   try {
-    const res = await wx.cloud.callFunction({
-      name: 'getThesaurusList'
-    });
+    // 并发请求：同时获取词库列表和用户进度（如果已登录）
+    const promises = [
+      wx.cloud.callFunction({
+        name: 'getThesaurusList'
+      })
+    ];
 
-    console.log("获取词库数据", res.result.data);
-    // 将获取的数据赋值给 libraries
-    libraries.value = res.result.data;
-
-    // 如果用户已登录，获取学习进度
+    // 如果用户已登录，添加获取进度的请求
     if (isUserLoggedIn) {
-      await getUserLibraryProgress();
+      promises.push(
+        wx.cloud.callFunction({
+          name: 'getLibraryProgress'
+        })
+      );
+    }
+
+    // 等待所有请求完成
+    const results = await Promise.all(promises);
+
+    // 处理词库列表结果
+    const libraryResult = results[0];
+    console.log("获取词库数据", libraryResult.result.data);
+    libraries.value = libraryResult.result.data;
+
+    // 处理用户进度结果（如果有）
+    if (isUserLoggedIn && results.length > 1) {
+      const progressResult = results[1];
+      if (progressResult.result.code === 0 && progressResult.result.data) {
+        console.log('获取用户词库学习进度成功:', progressResult.result.data);
+        userProgress.value = progressResult.result.data;
+      } else {
+        console.error('获取用户词库学习进度失败:', progressResult.result.message);
+      }
     }
 
     if (showLoading) {
@@ -300,11 +293,11 @@ const loadLibraryData = async (showLoading = true) => {
       uni.hideLoading();
     }
   } catch (err) {
-    console.error("获取词库列表失败", err);
+    console.error("加载数据失败", err);
     if (showLoading) {
       uni.hideLoading();
       uni.showToast({
-        title: '获取词库列表失败',
+        title: '加载数据失败',
         icon: 'none'
       });
     }

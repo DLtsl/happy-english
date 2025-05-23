@@ -43,29 +43,6 @@
       </view>
     </view>
 
-    <!-- 学习统计 - 横向展示 -->
-    <view class="stats-section glass-effect" v-if="isLoggedIn">
-      <text class="section-title">学习统计</text>
-      <view class="stats-row">
-        <view class="stat-item">
-          <text class="stat-value">{{ userInfo.learnedWords || 0 }}</text>
-          <text class="stat-label">已学单词</text>
-        </view>
-        <view class="stat-item">
-          <text class="stat-value">{{ userInfo.masteredWords || 0 }}</text>
-          <text class="stat-label">已掌握</text>
-        </view>
-        <view class="stat-item">
-          <text class="stat-value">{{ userInfo.streak || 0 }}</text>
-          <text class="stat-label">连续天数</text>
-        </view>
-        <view class="stat-item">
-          <text class="stat-value">{{ userInfo.totalLearnTime || 0 }}</text>
-          <text class="stat-label">学习时长(分钟)</text>
-        </view>
-      </view>
-    </view>
-
     <!-- 设置列表 -->
     <view class="settings-section glass-effect">
       <text class="section-title">设置</text>
@@ -414,12 +391,11 @@ const editDailyGoal = () => {
 
   uni.showModal({
     title: '每日学习目标',
-    content: '请输入每日学习单词数量',
     editable: true,
-    placeholderText: '请输入10-100之间的数字',
+    placeholderText: '请输入每日学习单词数量（10-100）',
     success: async (res) => {
       if (res.confirm) {
-        const dailyGoal = parseInt(res.content);
+        const dailyGoal = parseInt(res.content || '50');
 
         if (isNaN(dailyGoal) || dailyGoal < 10 || dailyGoal > 100) {
           uni.showToast({
@@ -736,65 +712,13 @@ onMounted(() => {
   line-height: 1.5;
 }
 
-/* 统计部分 */
-.stats-section {
-  padding: 30rpx;
-}
-
+/* 设置部分标题 */
 .section-title {
   font-size: 32rpx;
   font-weight: bold;
   color: #333;
   margin-bottom: 30rpx;
   display: block;
-}
-
-.stats-row {
-  display: flex;
-  justify-content: space-between;
-  overflow-x: auto;
-  padding: 10rpx 0;
-  -webkit-overflow-scrolling: touch; /* 提供iOS的滑动惯性 */
-  scrollbar-width: none; /* 隐藏Firefox滚动条 */
-}
-
-.stats-row::-webkit-scrollbar {
-  display: none; /* 隐藏Chrome滚动条 */
-}
-
-.stat-item {
-  flex: 0 0 auto;
-  min-width: 160rpx;
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 15rpx;
-  padding: 20rpx 15rpx;
-  margin-right: 20rpx;
-  text-align: center;
-  box-shadow: 0 4rpx 10rpx rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s;
-}
-
-.stat-item:last-child {
-  margin-right: 0;
-}
-
-.stat-item:active {
-  transform: scale(0.95);
-}
-
-.stat-value {
-  font-size: 40rpx;
-  font-weight: bold;
-  color: #6366f1;
-  display: block;
-  margin-bottom: 10rpx;
-}
-
-.stat-label {
-  font-size: 24rpx;
-  color: #666;
-  font-weight: 500;
-  white-space: nowrap;
 }
 
 /* 设置部分 */
