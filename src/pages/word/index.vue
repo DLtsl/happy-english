@@ -33,7 +33,7 @@
         v-for="(library, index) in filteredLibraries"
         :key="index"
         class="library-card glass-effect"
-        :class="{ 'library-card-selected': selectedLibraryId === (library._id || library.id) }"
+        :class="{ 'library-card-selected': selectedLibraryId === library.bookId }"
         @click="selectLibrary(library)"
       >
         <view class="library-header">
@@ -133,8 +133,8 @@ const filteredLibraries = computed(() => {
 const selectLibrary = (library) => {
   console.log('选择词库:', library.name);
 
-  // 获取词库ID（优先使用 _id，如果没有则使用 id）
-  const libraryId = library._id || library.id;
+  // 获取词库ID（使用 bookId）
+  const libraryId = library.bookId;
 
   // 如果已经选中了这个词库，则取消选中
   if (selectedLibraryId.value === libraryId) {
@@ -166,8 +166,8 @@ const createCustomLibrary = () => {
 const startLearningLibrary = (library) => {
   console.log('开始学习:', library.name);
 
-  // 获取词库ID（优先使用 _id，如果没有则使用 id）
-  const libraryId = library._id || library.id;
+  // 获取词库ID（使用 bookId）
+  const libraryId = library.bookId;
 
   // 显示提示
   uni.showToast({
@@ -177,14 +177,14 @@ const startLearningLibrary = (library) => {
 
   // 跳转到学习页面
   uni.navigateTo({
-    url: `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}`
+    url: `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}&wordCount=${library.wordCount}`
   });
 };
 
 // 开始学习（底部按钮，现在已隐藏，暂时保留代码供参考）
 /*
 const startLearning = () => {
-  const selectedLibrary = libraries.value.find(lib => lib._id === selectedLibraryId.value || lib.id === selectedLibraryId.value);
+  const selectedLibrary = libraries.value.find(lib => lib.bookId === selectedLibraryId.value);
   if (selectedLibrary) {
     startLearningLibrary(selectedLibrary);
   }

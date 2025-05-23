@@ -114,6 +114,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { onLoad } from '@dcloudio/uni-app';
 
 // 模拟单词数据
 const mockWordData = {
@@ -342,13 +343,68 @@ const handleForget = () => {
 };
 
 const nextWord = () => {
-  // 如果当前是最后一个单词，则提示学习完成
-  if (currentIndex.value >= totalWords.value - 1) {
-    uni.showToast({
-      title: '恭喜你，学习完成！',
-      icon: 'success',
-      duration: 2000
-    });
+  console.log("nextWord", currentIndex.value, words.value.length, totalWords.value);
+
+  // 如果当前是最后一个单词，则尝试加载下一个
+  if (currentIndex.value >= words.value.length - 1) {
+    // 检查是否还有更多单词可以加载
+    if (words.value.length < totalWords.value) {
+      // 获取下一个单词的序号
+      const nextWordRank = words.value[words.value.length - 1].wordRank + 1;
+
+      // 获取当前页面
+      const pages = getCurrentPages();
+      const currentPage = pages[pages.length - 1];
+      const options = currentPage.options || {};
+      const libraryId = options.libraryId;
+
+      if (libraryId) {
+        // 显示加载提示
+        uni.showLoading({
+          title: '加载下一个单词...'
+        });
+
+        // 获取下一个单词
+        fetchWordData(libraryId, nextWordRank)
+          .then(result => {
+            uni.hideLoading();
+
+            if (result.success) {
+              // 移动到下一个单词
+              currentIndex.value++;
+              // 更新音频源
+              updateAudioSources();
+            } else if (result.isLast) {
+              // 已经是最后一个单词
+              uni.showToast({
+                title: '恭喜你，学习完成！',
+                icon: 'success',
+                duration: 2000
+              });
+            } else {
+              // 获取失败
+              uni.showToast({
+                title: '获取下一个单词失败',
+                icon: 'none'
+              });
+            }
+          });
+      } else {
+        // 没有词库ID，无法获取更多单词
+        uni.showToast({
+          title: '恭喜你，学习完成！',
+          icon: 'success',
+          duration: 2000
+        });
+      }
+    } else {
+      // 已经学习完所有单词
+      uni.showToast({
+        title: '恭喜你，学习完成！',
+        icon: 'success',
+        duration: 2000
+      });
+    }
     return;
   }
 
@@ -371,55 +427,152 @@ const updateAudioSources = () => {
   usAudio.value.src = `https://dict.youdao.com/dictvoice?audio=${word}&type=2`;
 };
 
-// 获取页面参数
-const getParams = () => {
-  const pages = getCurrentPages();
-  const currentPage = pages[pages.length - 1];
-  const options = currentPage.$page?.options || {};
-  return {
-    libraryId: options.libraryId,
-    libraryName: options.libraryName ? decodeURIComponent(options.libraryName) : '单词学习'
-  };
-};
+// 获取单个单词数据
+const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
+  // 从云函数获取单词数据
+  console.log('获取单词数据:', libraryId, '单词序号:', wordRank, isRetry ? '(重试)' : '');
 
-// 获取词库数据
-const fetchWordLibrary = (libraryId) => {
-  // 实际应用中，这里会从API获取词库数据
-  console.log('获取词库数据:', libraryId);
+  if (!isRetry) {
+    // 显示加载中提示
+    uni.showLoading({
+      title: '加载中...'
+    });
+  }
 
-  // 模拟API请求延迟
-  uni.showLoading({
-    title: '加载中...'
-  });
+  // 调用云函数获取单个单词
+  return wx.cloud.callFunction({
+    name: 'getWordsByBookId',
+    data: {
+      bookId: libraryId,
+      wordRank: wordRank,
+      wordCount: totalWords.value
+    }
+  })
+  .then(res => {
+    console.log("获取单词数据结果:", res.result);
 
-  // 模拟请求成功
-  setTimeout(() => {
-    // 这里只是模拟数据，实际应用中会从API获取
-    words.value = [mockWordData];
-    totalWords.value = words.value.length;
+    if (!isRetry) {
+      uni.hideLoading();
+    }
 
-    uni.hideLoading();
-
-    // 设置导航栏标题
-    const params = getParams();
-    if (params.libraryName) {
-      uni.setNavigationBarTitle({
-        title: params.libraryName
+    if (res.result.code === 0 && res.result.data) {
+      // 如果成功获取到单词
+      if (res.result.data.word) {
+        // 如果是第一个单词或替换当前单词，则重置单词列表
+        if (wordRank === 1 || words.value.length === 0) {
+          words.value = [res.result.data.word];
+          currentIndex.value = 0;
+        } else {
+          // 否则添加到单词列表
+          words.value.push(res.result.data.word);
+        }
+        return { success: true, word: res.result.data.word };
+      }
+      // 如果当前序号没有单词，但有建议的下一个序号
+      else if (res.result.data.nextRank) {
+        console.log("当前序号没有单词，尝试下一个序号:", res.result.data.nextRank);
+        // 递归调用，尝试获取下一个序号的单词
+        return fetchWordData(libraryId, res.result.data.nextRank, true);
+      }
+      // 如果已经是最后一个单词
+      else if (res.result.data.isLast) {
+        console.log("已经是最后一个单词");
+        uni.showToast({
+          title: '已经是最后一个单词',
+          icon: 'none',
+          duration: 2000
+        });
+        return { success: false, isLast: true };
+      }
+      // 其他情况，使用模拟数据
+      else {
+        console.warn("未获取到单词数据，使用示例数据");
+        if (words.value.length === 0) {
+          words.value = [mockWordData];
+          totalWords.value = 1;
+        }
+        return { success: false };
+      }
+    } else {
+      // 请求失败，使用模拟数据
+      console.error("获取单词数据失败", res.result.message);
+      if (!isRetry) {
+        uni.showToast({
+          title: '获取单词数据失败，使用示例数据',
+          icon: 'none'
+        });
+      }
+      if (words.value.length === 0) {
+        words.value = [mockWordData];
+        totalWords.value = 1;
+      }
+      return { success: false, error: res.result.message };
+    }
+  })
+  .catch(err => {
+    console.error("调用云函数失败", err);
+    if (!isRetry) {
+      uni.hideLoading();
+      uni.showToast({
+        title: '获取单词数据失败',
+        icon: 'none'
       });
     }
-  }, 500);
+    // 使用模拟数据作为备用
+    if (words.value.length === 0) {
+      words.value = [mockWordData];
+      totalWords.value = 1;
+    }
+    return { success: false, error: err.message };
+  });
 };
+
+// 获取词库数据（初始化）
+const fetchWordLibrary = (libraryId, startRank = 1) => {
+  // 获取第一个单词
+  fetchWordData(libraryId, startRank);
+};
+
+// onLoad 生命周期钩子 - 页面加载时获取参数
+onLoad((options) => {
+  console.log('study.vue onLoad 获取到的参数:', options);
+
+  // 获取词库ID、名称和单词总数
+  const libraryId = options.libraryId;
+  const libraryName = options.libraryName ? decodeURIComponent(options.libraryName) : '单词学习';
+  const wordCount = options.wordCount ? parseInt(options.wordCount) : 0;
+
+  console.log('解析后的参数:', { libraryId, libraryName, wordCount });
+
+  // 设置总单词数
+  if (wordCount > 0) {
+    totalWords.value = wordCount;
+  }
+
+  if (libraryId) {
+    console.log('开始获取词库数据, libraryId:', libraryId);
+    // 获取词库数据，从第一个单词开始
+    fetchWordLibrary(libraryId, 1);
+
+    // 设置页面标题
+    if (libraryName) {
+      uni.setNavigationBarTitle({
+        title: libraryName
+      });
+    }
+  } else {
+    console.warn('未指定词库ID，使用示例数据');
+    // 没有传入词库ID，使用默认数据
+    totalWords.value = words.value.length;
+    uni.showToast({
+      title: '未指定词库，使用示例数据',
+      icon: 'none'
+    });
+  }
+});
 
 // 生命周期钩子
 onMounted(() => {
-  const params = getParams();
-  if (params.libraryId) {
-    fetchWordLibrary(params.libraryId);
-  } else {
-    // 没有传入词库ID，使用默认数据
-    totalWords.value = words.value.length;
-  }
-
   // 初始化音频对象
   initAudio();
 });
