@@ -3,8 +3,16 @@
     <!-- 顶部进度条 -->
     <view class="progress-bar-container glass-effect">
       <view class="progress-info">
-        <text class="progress-text">学习进度: {{ currentIndex + 1 }}/{{ totalWords }}</text>
-        <text class="time-text">测验: {{ totalWords - currentIndex - 1 }}个</text>
+        <text class="progress-text">学习进度: {{ currentWord.wordRank }}/{{ totalWords }}</text>
+        <text class="time-text" v-if="isLoggedIn">
+          <template v-if="userProgress && userProgress.totalStudied">
+            已学: {{ userProgress.totalStudied }}个
+          </template>
+          <template v-else>
+            测验: {{ totalWords - currentWord.wordRank }}个
+          </template>
+        </text>
+        <text class="time-text" v-else>测验: {{ totalWords - currentWord.wordRank }}个</text>
       </view>
       <view class="progress-bar">
         <view class="progress-fill" :style="{ width: progressPercentage + '%' }">
@@ -92,15 +100,15 @@
       </view>
     </view>
 
-    <!-- 操作按钮 -->
+    <!-- 操作按钮 - 优化布局 -->
     <view class="action-buttons glass-effect">
       <view class="button-group">
         <view class="action-button forget" @click="handleForget">
-          <text class="button-icon">😟</text>
+          <text class="button-icon">✗</text>
           <text class="button-text">不认识</text>
         </view>
         <view class="action-button know" @click="handleKnow">
-          <text class="button-icon">😊</text>
+          <text class="button-icon">✓</text>
           <text class="button-text">认识</text>
         </view>
       </view>
@@ -238,15 +246,20 @@ const mockWordData = {
 };
 
 // 状态变量
-const words = ref([mockWordData]); // 实际应用中这里会从API获取词库数据
-const currentIndex = ref(0);
+const currentWord = ref(mockWordData); // 当前单词数据
 const totalWords = ref(1); // 实际应用中这里会是词库的总单词数
 const knownWords = ref([]);
 const unknownWords = ref([]);
 
+// 用户状态
+const isLoggedIn = ref(false);
+const userInfo = ref(null);
+const userProgress = ref(null);
+const libraryId = ref('');
+const startRank = ref(1);
+
 // 计算属性
-const currentWord = computed(() => words.value[currentIndex.value] || mockWordData);
-const progressPercentage = computed(() => ((currentIndex.value + 1) / totalWords.value) * 100);
+const progressPercentage = computed(() => (currentWord.value.wordRank / totalWords.value) * 100);
 
 // 方法
 // 创建两个持久的音频对象
@@ -305,114 +318,123 @@ const playPronunciation = (type, e) => {
 };
 
 const handleKnow = () => {
-  // 标记为认识
-  knownWords.value.push(currentWord.value.content.word.wordId);
+  // 获取单词ID
+  const wordId = currentWord.value.content.word.wordId;
 
-  // 显示提示
+  // 标记为认识
+  if (wordId && !knownWords.value.includes(wordId)) {
+    knownWords.value.push(wordId);
+  }
+
+  // 显示简短提示
   uni.showToast({
     title: '已标记为认识',
     icon: 'success',
-    duration: 1500
+    duration: 500  // 减少提示显示时间
   });
 
+  // 如果用户已登录且这个单词之前被标记为不认识，可以考虑从未掌握单词表中移除
+  // 这个功能可以在后续版本中实现
+
   // 自动翻到下一个
-  setTimeout(() => {
-    nextWord();
-  }, 800);
+  nextWord();
 };
 
 const handleForget = () => {
-  // 标记为不认识
-  unknownWords.value.push(currentWord.value.content.word.wordId);
+  // 获取单词ID
+  const wordId = currentWord.value.content.word.wordId;
 
-  // 显示提示
+  // 标记为不认识
+  if (wordId && !unknownWords.value.includes(wordId)) {
+    unknownWords.value.push(wordId);
+  }
+
+  // 如果用户已登录，保存未掌握单词
+  if (isLoggedIn.value) {
+    // 保存到未掌握单词表
+    saveUnknownWord(currentWord.value);
+  }
+
+  // 显示提示（简短提示）
   uni.showToast({
     title: '已标记为不认识',
     icon: 'none',
-    duration: 1500
+    duration: 800
   });
 
-  // 自动滚动到释义部分
+  // 立即滚动到释义部分，无延迟
+  uni.pageScrollTo({
+    scrollTop: 0,
+    duration: 200  // 减少滚动动画时间
+  });
+
+  // 给用户一点时间查看释义，然后自动进入下一个单词
+  // 使用较短的延迟，避免用户等待太久
   setTimeout(() => {
-    // 使用uni的API滚动到顶部
-    uni.pageScrollTo({
-      scrollTop: 0,
-      duration: 300
-    });
-  }, 100);
+    nextWord();
+  }, 1500); // 1.5秒后自动进入下一个单词
 };
 
 const nextWord = () => {
-  console.log("nextWord", currentIndex.value, words.value.length, totalWords.value);
+  console.log("nextWord", currentWord.value.wordRank, totalWords.value);
 
-  // 如果当前是最后一个单词，则尝试加载下一个
-  if (currentIndex.value >= words.value.length - 1) {
-    // 检查是否还有更多单词可以加载
-    if (words.value.length < totalWords.value) {
-      // 获取下一个单词的序号
-      const nextWordRank = words.value[words.value.length - 1].wordRank + 1;
+  // 检查是否还有更多单词可以加载
+  if (currentWord.value.wordRank < totalWords.value) {
+    // 获取下一个单词的序号
+    const nextWordRank = currentWord.value.wordRank + 1;
 
-      // 获取当前页面
-      const pages = getCurrentPages();
-      const currentPage = pages[pages.length - 1];
-      const options = currentPage.options || {};
-      const libraryId = options.libraryId;
+    // 获取当前页面
+    const pages = getCurrentPages();
+    const currentPage = pages[pages.length - 1];
+    const options = currentPage.options || {};
+    const currentLibraryId = options.libraryId || libraryId.value;
 
-      if (libraryId) {
-        // 显示加载提示
-        uni.showLoading({
-          title: '加载下一个单词...'
+    if (currentLibraryId) {
+      // 使用更简洁的加载提示
+      uni.showLoading({
+        title: '加载中...',
+        mask: true  // 添加遮罩，防止用户多次点击
+      });
+
+      // 获取下一个单词
+      fetchWordData(currentLibraryId, nextWordRank)
+        .then(result => {
+          uni.hideLoading();
+
+          if (result.success) {
+            // 单词已在 fetchWordData 中更新
+            console.log("成功加载下一个单词");
+          } else if (result.isLast) {
+            // 已经是最后一个单词
+            uni.showToast({
+              title: '恭喜你，学习完成！',
+              icon: 'success',
+              duration: 2000
+            });
+          } else {
+            // 获取失败
+            uni.showToast({
+              title: '获取下一个单词失败',
+              icon: 'none'
+            });
+          }
         });
-
-        // 获取下一个单词
-        fetchWordData(libraryId, nextWordRank)
-          .then(result => {
-            uni.hideLoading();
-
-            if (result.success) {
-              // 移动到下一个单词
-              currentIndex.value++;
-              // 更新音频源
-              updateAudioSources();
-            } else if (result.isLast) {
-              // 已经是最后一个单词
-              uni.showToast({
-                title: '恭喜你，学习完成！',
-                icon: 'success',
-                duration: 2000
-              });
-            } else {
-              // 获取失败
-              uni.showToast({
-                title: '获取下一个单词失败',
-                icon: 'none'
-              });
-            }
-          });
-      } else {
-        // 没有词库ID，无法获取更多单词
-        uni.showToast({
-          title: '恭喜你，学习完成！',
-          icon: 'success',
-          duration: 2000
-        });
-      }
     } else {
-      // 已经学习完所有单词
+      // 没有词库ID，无法获取更多单词
       uni.showToast({
         title: '恭喜你，学习完成！',
         icon: 'success',
         duration: 2000
       });
     }
-    return;
+  } else {
+    // 已经学习完所有单词
+    uni.showToast({
+      title: '恭喜你，学习完成！',
+      icon: 'success',
+      duration: 2000
+    });
   }
-
-  // 切换到下一个单词
-  currentIndex.value++;
-
-  // 更新音频源
-  updateAudioSources();
 };
 
 // 更新音频源
@@ -433,9 +455,10 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
   console.log('获取单词数据:', libraryId, '单词序号:', wordRank, isRetry ? '(重试)' : '');
 
   if (!isRetry) {
-    // 显示加载中提示
+    // 显示简洁的加载提示，添加遮罩防止用户多次点击
     uni.showLoading({
-      title: '加载中...'
+      title: '加载中...',
+      mask: true
     });
   }
 
@@ -445,7 +468,8 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
     data: {
       bookId: libraryId,
       wordRank: wordRank,
-      wordCount: totalWords.value
+      wordCount: totalWords.value,
+      saveProgress: true // 保存学习进度
     }
   })
   .then(res => {
@@ -456,16 +480,21 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
     }
 
     if (res.result.code === 0 && res.result.data) {
+      // 如果返回了用户进度信息，更新本地进度
+      if (res.result.data.userProgress) {
+        userProgress.value = res.result.data.userProgress;
+        console.log("更新用户进度:", userProgress.value);
+      }
+
       // 如果成功获取到单词
       if (res.result.data.word) {
-        // 如果是第一个单词或替换当前单词，则重置单词列表
-        if (wordRank === 1 || words.value.length === 0) {
-          words.value = [res.result.data.word];
-          currentIndex.value = 0;
-        } else {
-          // 否则添加到单词列表
-          words.value.push(res.result.data.word);
-        }
+        // 直接更新当前单词
+        currentWord.value = res.result.data.word;
+        console.log("更新当前单词:", currentWord.value);
+
+        // 更新音频源
+        updateAudioSources();
+
         return { success: true, word: res.result.data.word };
       }
       // 如果当前序号没有单词，但有建议的下一个序号
@@ -487,10 +516,8 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
       // 其他情况，使用模拟数据
       else {
         console.warn("未获取到单词数据，使用示例数据");
-        if (words.value.length === 0) {
-          words.value = [mockWordData];
-          totalWords.value = 1;
-        }
+        currentWord.value = mockWordData;
+        totalWords.value = 1;
         return { success: false };
       }
     } else {
@@ -502,10 +529,8 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
           icon: 'none'
         });
       }
-      if (words.value.length === 0) {
-        words.value = [mockWordData];
-        totalWords.value = 1;
-      }
+      currentWord.value = mockWordData;
+      totalWords.value = 1;
       return { success: false, error: res.result.message };
     }
   })
@@ -519,40 +544,123 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
       });
     }
     // 使用模拟数据作为备用
-    if (words.value.length === 0) {
-      words.value = [mockWordData];
-      totalWords.value = 1;
-    }
+    currentWord.value = mockWordData;
+    totalWords.value = 1;
     return { success: false, error: err.message };
   });
 };
 
+// 检查用户登录状态
+const checkLoginStatus = () => {
+  // 从本地存储获取用户信息
+  const userInfoStorage = uni.getStorageSync('userInfo');
+  if (userInfoStorage) {
+    try {
+      userInfo.value = JSON.parse(userInfoStorage);
+      isLoggedIn.value = true;
+      console.log('用户已登录:', userInfo.value);
+      return true;
+    } catch (error) {
+      console.error('解析用户信息失败:', error);
+      isLoggedIn.value = false;
+      return false;
+    }
+  } else {
+    console.log('用户未登录');
+    isLoggedIn.value = false;
+    return false;
+  }
+};
+
+// 用户学习进度相关逻辑已整合到 getWordsByBookId 云函数中
+
+// 保存未掌握的单词
+const saveUnknownWord = async (word) => {
+  if (!isLoggedIn.value || !libraryId.value) {
+    console.log('用户未登录或词库ID为空，不保存未掌握单词');
+    return;
+  }
+
+  try {
+    // 获取单词ID，优先使用wordId，如果没有则使用headWord
+    const wordId = word.content.word.wordId || word.headWord;
+
+    // 确保单词序号有效
+    if (!word.wordRank || word.wordRank < 1) {
+      console.error('单词序号无效，不保存未掌握单词');
+      return;
+    }
+
+    console.log('保存未掌握单词:', {
+      bookId: libraryId.value,
+      wordId: wordId,
+      wordRank: word.wordRank
+    });
+
+    const res = await wx.cloud.callFunction({
+      name: 'saveUnknownWord',
+      data: {
+        bookId: libraryId.value,
+        wordId: wordId,
+        wordRank: word.wordRank
+      }
+    });
+
+    if (res.result.code === 0) {
+      console.log('保存未掌握单词成功:', res.result.data);
+
+      // 可以在这里更新本地未掌握单词列表，方便后续使用
+      // 例如：添加到本地未掌握单词列表中，避免重复添加
+      if (!unknownWords.value.includes(wordId)) {
+        unknownWords.value.push(wordId);
+      }
+    } else {
+      console.error('保存未掌握单词失败:', res.result.message);
+    }
+  } catch (error) {
+    console.error('保存未掌握单词失败:', error);
+  }
+};
+
 // 获取词库数据（初始化）
-const fetchWordLibrary = (libraryId, startRank = 1) => {
+const fetchWordLibrary = (bookId, startWordRank = 1) => {
+  // 保存词库ID
+  libraryId.value = bookId;
+
   // 获取第一个单词
-  fetchWordData(libraryId, startRank);
+  fetchWordData(bookId, startWordRank);
 };
 
 // onLoad 生命周期钩子 - 页面加载时获取参数
-onLoad((options) => {
+onLoad(async (options) => {
   console.log('study.vue onLoad 获取到的参数:', options);
 
   // 获取词库ID、名称和单词总数
-  const libraryId = options.libraryId;
+  const bookId = options.libraryId;
   const libraryName = options.libraryName ? decodeURIComponent(options.libraryName) : '单词学习';
   const wordCount = options.wordCount ? parseInt(options.wordCount) : 0;
 
-  console.log('解析后的参数:', { libraryId, libraryName, wordCount });
+  console.log('解析后的参数:', { bookId, libraryName, wordCount });
 
   // 设置总单词数
   if (wordCount > 0) {
     totalWords.value = wordCount;
   }
 
-  if (libraryId) {
-    console.log('开始获取词库数据, libraryId:', libraryId);
-    // 获取词库数据，从第一个单词开始
-    fetchWordLibrary(libraryId, 1);
+  if (bookId) {
+    // 保存词库ID到响应式变量，方便后续使用
+    libraryId.value = bookId;
+
+    // 检查用户登录状态
+    checkLoginStatus();
+
+    // 从第一个单词开始，云函数会自动获取用户进度
+    console.log('从第一个单词开始，云函数会自动获取用户进度');
+    startRank.value = 1;
+
+    console.log('开始获取词库数据, bookId:', bookId);
+    // 获取词库数据，云函数会自动获取用户进度
+    fetchWordLibrary(bookId, startRank.value);
 
     // 设置页面标题
     if (libraryName) {
@@ -563,7 +671,7 @@ onLoad((options) => {
   } else {
     console.warn('未指定词库ID，使用示例数据');
     // 没有传入词库ID，使用默认数据
-    totalWords.value = words.value.length;
+    totalWords.value = 1;
     uni.showToast({
       title: '未指定词库，使用示例数据',
       icon: 'none'
@@ -892,25 +1000,28 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 8rpx;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
 }
 
 .action-button:active {
-  transform: scale(0.98);
+  transform: scale(0.95);
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.1);
 }
 
 .action-button.forget {
-  background: #fee2e2;
-  color: #ef4444;
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  color: #dc2626;
 }
 
 .action-button.know {
-  background: #dcfce7;
-  color: #22c55e;
+  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+  color: #16a34a;
 }
 
 .button-icon {
-  font-size: 32rpx;
+  font-size: 36rpx;
+  font-weight: bold;
 }
 
 .button-text {
@@ -919,28 +1030,31 @@ onBeforeUnmount(() => {
 }
 
 .next-button {
-  background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   padding: 25rpx;
   border-radius: 16rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8rpx;
-  transition: all 0.3s ease;
+  gap: 10rpx;
+  transition: all 0.2s ease;
+  box-shadow: 0 4rpx 12rpx rgba(99, 102, 241, 0.3);
+  margin-top: 10rpx;
 }
 
 .next-button:active {
-  transform: scale(0.98);
+  transform: scale(0.95);
+  box-shadow: 0 2rpx 6rpx rgba(99, 102, 241, 0.2);
 }
 
 .next-text {
-  font-size: 30rpx;
-  font-weight: 500;
+  font-size: 32rpx;
+  font-weight: 600;
   color: #ffffff;
 }
 
 .next-icon {
-  font-size: 30rpx;
+  font-size: 32rpx;
   color: #ffffff;
 }
 </style>

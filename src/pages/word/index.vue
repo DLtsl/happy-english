@@ -91,16 +91,12 @@
       <text class="button-icon">▶️</text>
       <text class="button-text">开始学习</text>
     </view> -->
-    <view class="bottom-button" @click="createCustomLibrary">
-      <text class="button-icon">➕</text>
-      <text class="button-text">创建自定义词库</text>
-    </view>
   </view>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue';
-import { onLoad } from '@dcloudio/uni-app'
+import { onShow } from '@dcloudio/uni-app'
 
 // 搜索数据
 const searchQuery = ref('');
@@ -112,10 +108,33 @@ const selectedLibraryId = ref(null); // 当前选中的词库ID
 
 // 词库数据
 const libraries = ref([]);
+// 用户状态
+const isLoggedIn = ref(false);
+// 用户学习进度
+const userProgress = ref({});
 
 // 根据搜索过滤词库
 const filteredLibraries = computed(() => {
-  let result = libraries.value;
+  let result = libraries.value.map(library => {
+    // 创建一个新对象，避免修改原始数据
+    const newLibrary = { ...library };
+
+    // 如果用户已登录且有该词库的学习进度，则使用实际进度
+    if (isLoggedIn.value && userProgress.value[library.bookId]) {
+      const progress = userProgress.value[library.bookId];
+      newLibrary.learnedCount = progress.totalStudied || 0;
+      newLibrary.masteredCount = progress.totalStudied - (progress.unknownCount || 0);
+
+      // 计算正确率（已掌握/已学习）
+      if (progress.totalStudied > 0) {
+        newLibrary.accuracy = Math.round(((progress.totalStudied - (progress.unknownCount || 0)) / progress.totalStudied) * 100);
+      } else {
+        newLibrary.accuracy = 0;
+      }
+    }
+
+    return newLibrary;
+  });
 
   // 按搜索词过滤
   if (searchQuery.value.trim()) {
@@ -153,14 +172,7 @@ const selectLibrary = (library) => {
   }
 };
 
-// 创建自定义词库
-const createCustomLibrary = () => {
-  console.log('创建自定义词库');
-  uni.showToast({
-    title: '创建自定义词库功能即将上线',
-    icon: 'none'
-  });
-};
+
 
 // 立即学习指定词库
 const startLearningLibrary = (library) => {
@@ -175,9 +187,12 @@ const startLearningLibrary = (library) => {
     icon: 'success'
   });
 
+  // 构建URL参数 - 不再传递进度信息，由云函数自动获取
+  const url = `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}&wordCount=${library.wordCount}`;
+
   // 跳转到学习页面
   uni.navigateTo({
-    url: `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}&wordCount=${library.wordCount}`
+    url: url
   });
 };
 
@@ -203,32 +218,112 @@ const getDifficultyClass = (difficulty) => {
   return map[difficulty] || 'intermediate';
 };
 
-onLoad(() => {
-  // 显示加载中提示
-  uni.showLoading({
-    title: '加载词库中...'
-  });
+// 检查用户登录状态
+const checkLoginStatus = () => {
+  // 从本地存储获取用户信息
+  const userInfoStorage = uni.getStorageSync('userInfo');
+  if (userInfoStorage) {
+    try {
+      const userInfo = JSON.parse(userInfoStorage);
+      isLoggedIn.value = true;
+      console.log('用户已登录:', userInfo);
+      return true;
+    } catch (error) {
+      console.error('解析用户信息失败:', error);
+      isLoggedIn.value = false;
+      return false;
+    }
+  } else {
+    console.log('用户未登录');
+    isLoggedIn.value = false;
+    return false;
+  }
+};
+
+// 获取用户词库学习进度
+const getUserLibraryProgress = async () => {
+  if (!isLoggedIn.value) {
+    console.log('用户未登录，不获取学习进度');
+    return;
+  }
+
+  try {
+    uni.showLoading({ title: '获取学习进度...' });
+
+    const res = await wx.cloud.callFunction({
+      name: 'getLibraryProgress'
+    });
+
+    uni.hideLoading();
+
+    if (res.result.code === 0 && res.result.data) {
+      console.log('获取用户词库学习进度成功:', res.result.data);
+      userProgress.value = res.result.data;
+    } else {
+      console.error('获取用户词库学习进度失败:', res.result.message);
+    }
+  } catch (error) {
+    uni.hideLoading();
+    console.error('获取用户词库学习进度失败:', error);
+  }
+};
+
+// 加载词库数据和用户进度
+const loadLibraryData = async (showLoading = true) => {
+  if (showLoading) {
+    // 显示加载中提示
+    uni.showLoading({
+      title: '加载词库中...'
+    });
+  }
+
+  // 检查用户登录状态
+  const isUserLoggedIn = checkLoginStatus();
 
   // 调用云函数获取词库列表
-  wx.cloud.callFunction({
-    name: 'getThesaurusList'
-  })
-  .then(res => {
-    console.log("获取数据", res.result.data);
+  try {
+    const res = await wx.cloud.callFunction({
+      name: 'getThesaurusList'
+    });
+
+    console.log("获取词库数据", res.result.data);
     // 将获取的数据赋值给 libraries
     libraries.value = res.result.data;
-    // 隐藏加载提示
-    uni.hideLoading();
-  })
-  .catch(err => {
+
+    // 如果用户已登录，获取学习进度
+    if (isUserLoggedIn) {
+      await getUserLibraryProgress();
+    }
+
+    if (showLoading) {
+      // 隐藏加载提示
+      uni.hideLoading();
+    }
+  } catch (err) {
     console.error("获取词库列表失败", err);
-    uni.hideLoading();
-    uni.showToast({
-      title: '获取词库列表失败',
-      icon: 'none'
-    });
-  });
-})
+    if (showLoading) {
+      uni.hideLoading();
+      uni.showToast({
+        title: '获取词库列表失败',
+        icon: 'none'
+      });
+    }
+  }
+};
+
+// 标记是否是首次加载
+const isFirstLoad = ref(true);
+
+// 页面显示时加载数据
+onShow(() => {
+  console.log('页面显示，加载数据');
+  // 首次加载显示加载提示，后续静默刷新
+  loadLibraryData(isFirstLoad.value);
+  // 设置为非首次加载
+  if (isFirstLoad.value) {
+    isFirstLoad.value = false;
+  }
+});
 </script>
 
 <style>
