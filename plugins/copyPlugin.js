@@ -1,4 +1,4 @@
-import CopyPlugin from "vite-plugin-files-copy";
+// import CopyPlugin from "vite-plugin-files-copy";
 import fs from "fs";
 import path from "path";
 import fsExtra from "fs-extra";
