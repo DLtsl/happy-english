@@ -62,8 +62,8 @@
           </view>
 
           <!-- 例句 -->
-          <view class="section-title">例句</view>
-          <view v-for="(sentence, index) in currentWord.content.word.content.sentence.sentences" :key="'sentence-'+index" class="example-container">
+          <view v-if="currentWord.content.word.content.sentence && currentWord.content.word.content.sentence.sentences && currentWord.content.word.content.sentence.sentences.length > 0" class="section-title">例句</view>
+          <view v-for="(sentence, index) in currentWord.content.word.content.sentence?.sentences || []" :key="'sentence-'+index" class="example-container">
             <text class="example-text">{{ sentence.sContent }}</text>
             <text class="example-translation">{{ sentence.sCn }}</text>
           </view>
