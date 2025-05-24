@@ -2,12 +2,30 @@
   <view class="container">
     <!-- 顶部标题 -->
     <view class="header glass-effect">
-      <text class="header-title">词库选择</text>
-      <text class="header-subtitle">选择适合你的词库开始学习</text>
+      <text class="header-title">{{ activeTab === 'libraries' ? '词库选择' : '生疏词本' }}</text>
+      <text class="header-subtitle">{{ activeTab === 'libraries' ? '选择适合你的词库开始学习' : '复习你标记为不认识的单词' }}</text>
+    </view>
+
+    <!-- 主要标签切换 -->
+    <view class="main-tabs glass-effect">
+      <view
+        class="main-tab"
+        :class="{ active: activeTab === 'libraries' }"
+        @click="activeTab = 'libraries'"
+      >
+        <text class="main-tab-text">词库列表</text>
+      </view>
+      <view
+        class="main-tab"
+        :class="{ active: activeTab === 'unknown' }"
+        @click="switchToUnknownWords"
+      >
+        <text class="main-tab-text">生疏词本</text>
+      </view>
     </view>
 
     <!-- 搜索框 -->
-    <view class="search-container glass-effect">
+    <view class="search-container glass-effect" v-if="activeTab === 'libraries'">
       <view class="search-box">
         <text class="search-icon">🔍</text>
         <input class="search-input" type="text" placeholder="搜索词库" v-model="searchQuery" />
@@ -28,7 +46,7 @@
     </view> -->
 
     <!-- 词库列表 -->
-    <scroll-view scroll-y class="library-list">
+    <scroll-view scroll-y class="library-list" v-if="activeTab === 'libraries'">
       <view
         v-for="(library, index) in filteredLibraries"
         :key="index"
@@ -86,6 +104,48 @@
       </view>
     </scroll-view>
 
+    <!-- 生疏词本列表 -->
+    <scroll-view scroll-y class="library-list" v-if="activeTab === 'unknown'">
+      <view v-if="isLoading" class="loading-container glass-effect">
+        <text class="loading-text">加载中...</text>
+      </view>
+      <view v-else-if="unknownWordsByBook.length === 0" class="empty-container glass-effect">
+        <text class="empty-title">暂无生疏单词</text>
+        <text class="empty-subtitle">学习词库并标记不认识的单词，它们会出现在这里</text>
+        <view class="empty-action" @click="activeTab = 'libraries'">
+          <text class="empty-action-text">去学习</text>
+          <text class="empty-action-icon">→</text>
+        </view>
+      </view>
+      <view
+        v-else
+        v-for="(bookData, index) in unknownWordsByBook"
+        :key="index"
+        class="library-card glass-effect"
+      >
+        <view class="library-header">
+          <!-- 使用封面图替代图标 -->
+          <view class="library-icon" :class="bookData.color">
+            <image v-if="bookData.coverImage" class="icon-image" :src="bookData.coverImage" mode="aspectFill"></image>
+            <text v-else class="icon-text">{{ bookData.icon || '📚' }}</text>
+          </view>
+          <view class="library-info">
+            <text class="library-name">{{ bookData.name || '未知词库' }}</text>
+            <text class="library-count">{{ bookData.unknownCount }}个生疏单词</text>
+          </view>
+          <view v-if="bookData.difficulty" class="library-badge" :class="'difficulty-' + getDifficultyClass(bookData.difficulty)">
+            <text class="badge-text">{{ bookData.difficulty }}</text>
+          </view>
+        </view>
+
+        <!-- 复习按钮 -->
+        <view class="learn-now-button review-button" @click.stop="startReviewingLibrary(bookData)">
+          <text class="learn-now-text">开始复习</text>
+          <text class="learn-now-icon">→</text>
+        </view>
+      </view>
+    </scroll-view>
+
     <!-- 底部按钮（暂时隐藏） -->
     <!-- <view v-if="selectedLibraryId" class="bottom-button start-button" @click="startLearning">
       <text class="button-icon">▶️</text>
@@ -106,12 +166,18 @@ const selectedLibraryId = ref(null); // 当前选中的词库ID
 // const categories = ['全部', '考试', '日常', '专业', '自定义'];
 // const activeCategory = ref(0);
 
+// 标签页状态
+const activeTab = ref('libraries'); // 'libraries' 或 'unknown'
+const isLoading = ref(false);
+
 // 词库数据
 const libraries = ref([]);
 // 用户状态
 const isLoggedIn = ref(false);
 // 用户学习进度
 const userProgress = ref({});
+// 生疏词本数据
+const unknownWordsByBook = ref([]);
 
 // 根据搜索过滤词库
 const filteredLibraries = computed(() => {
@@ -307,11 +373,91 @@ const loadLibraryData = async (showLoading = true) => {
 // 标记是否是首次加载
 const isFirstLoad = ref(true);
 
+// 切换到生疏词本标签
+const switchToUnknownWords = () => {
+  activeTab.value = 'unknown';
+  loadUnknownWords();
+};
+
+// 加载生疏词本数据
+const loadUnknownWords = async () => {
+  // 检查用户是否登录
+  if (!checkLoginStatus()) {
+    uni.showToast({
+      title: '请先登录',
+      icon: 'none'
+    });
+    activeTab.value = 'libraries';
+    return;
+  }
+
+  isLoading.value = true;
+
+  try {
+    // 调用云函数获取按词库分组的生疏单词
+    const res = await wx.cloud.callFunction({
+      name: 'getUnknownWordsByBook'
+    });
+
+    console.log('获取生疏词本数据结果:', res.result);
+
+    if (res.result.code === 0 && res.result.data) {
+      // 直接使用返回的按词库分组的数据
+      unknownWordsByBook.value = res.result.data.books || [];
+      console.log('生疏词本数据:', unknownWordsByBook.value);
+    } else {
+      console.error('获取生疏词本失败:', res.result.message);
+      uni.showToast({
+        title: '获取生疏词本失败',
+        icon: 'none'
+      });
+      unknownWordsByBook.value = [];
+    }
+  } catch (err) {
+    console.error('获取生疏词本出错:', err);
+    uni.showToast({
+      title: '获取生疏词本出错',
+      icon: 'none'
+    });
+    unknownWordsByBook.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// 开始复习指定词库的生疏单词
+const startReviewingLibrary = (bookData) => {
+  console.log('开始复习生疏单词:', bookData.name);
+
+  // 获取词库ID
+  const libraryId = bookData.bookId;
+
+  // 显示提示
+  uni.showToast({
+    title: `开始复习: ${bookData.name}`,
+    icon: 'success'
+  });
+
+  // 构建URL参数 - 添加isReview标记
+  const url = `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(bookData.name)}&isReview=true`;
+
+  // 跳转到学习页面
+  uni.navigateTo({
+    url: url
+  });
+};
+
 // 页面显示时加载数据
 onShow(() => {
   console.log('页面显示，加载数据');
   // 首次加载显示加载提示，后续静默刷新
   loadLibraryData(isFirstLoad.value);
+
+  // 如果当前是生疏词本标签，刷新生疏词本数据
+  if (activeTab.value === 'unknown') {
+    loadUnknownWords();
+  }
+
   // 设置为非首次加载
   if (isFirstLoad.value) {
     isFirstLoad.value = false;
@@ -697,5 +843,98 @@ onShow(() => {
 
 .difficulty-mixed {
   background: #6b7280;
+}
+
+/* 主标签切换样式 */
+.main-tabs {
+  display: flex;
+  justify-content: space-between;
+  padding: 10rpx;
+  margin-bottom: 20rpx;
+}
+
+.main-tab {
+  flex: 1;
+  padding: 20rpx 0;
+  text-align: center;
+  border-radius: 10rpx;
+  transition: all 0.3s ease;
+}
+
+.main-tab.active {
+  background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+}
+
+.main-tab-text {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.main-tab.active .main-tab-text {
+  color: #ffffff;
+}
+
+/* 加载和空状态样式 */
+.loading-container {
+  padding: 60rpx;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300rpx;
+}
+
+.loading-text {
+  font-size: 32rpx;
+  color: #6b7280;
+}
+
+.empty-container {
+  padding: 60rpx 40rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400rpx;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #1f2937;
+  margin-bottom: 20rpx;
+}
+
+.empty-subtitle {
+  font-size: 28rpx;
+  color: #6b7280;
+  margin-bottom: 40rpx;
+  line-height: 1.5;
+}
+
+.empty-action {
+  background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+  padding: 20rpx 40rpx;
+  border-radius: 50rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.empty-action-text {
+  font-size: 28rpx;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.empty-action-icon {
+  font-size: 28rpx;
+  color: #ffffff;
+}
+
+/* 复习按钮样式 */
+.review-button {
+  background: linear-gradient(90deg, #8b5cf6 0%, #6366f1 100%);
 }
 </style>

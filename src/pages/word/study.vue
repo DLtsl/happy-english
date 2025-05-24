@@ -3,16 +3,8 @@
     <!-- 顶部进度条 -->
     <view class="progress-bar-container glass-effect">
       <view class="progress-info">
-        <text class="progress-text">学习进度: {{ currentWord.wordRank }}/{{ totalWords }}</text>
-        <text class="time-text" v-if="isLoggedIn">
-          <template v-if="userProgress && userProgress.totalStudied">
-            已学: {{ userProgress.totalStudied }}个
-          </template>
-          <template v-else>
-            测验: {{ totalWords - currentWord.wordRank }}个
-          </template>
-        </text>
-        <text class="time-text" v-else>测验: {{ totalWords - currentWord.wordRank }}个</text>
+        <text class="progress-text">学习进度: {{ currentProgressText }}</text>
+        <text class="time-text">{{ remainingText }}</text>
       </view>
       <view class="progress-bar">
         <view class="progress-fill" :style="{ width: progressPercentage + '%' }">
@@ -257,9 +249,81 @@ const userInfo = ref(null);
 const userProgress = ref(null);
 const libraryId = ref('');
 const startRank = ref(1);
+const isReviewModeActive = ref(false); // 存储复习模式状态
 
 // 计算属性
-const progressPercentage = computed(() => (currentWord.value.wordRank / totalWords.value) * 100);
+const isReviewMode = computed(() => {
+  console.log('isReviewMode 检查 - isReviewModeActive:', isReviewModeActive.value);
+  return isReviewModeActive.value;
+});
+
+const currentProgressText = computed(() => {
+  console.log('=== 进度计算调试 ===');
+  console.log('isReviewMode:', isReviewMode.value);
+  console.log('currentWord.reviewIndex:', currentWord.value.reviewIndex);
+  console.log('currentWord.wordRank:', currentWord.value.wordRank);
+  console.log('totalWords:', totalWords.value);
+
+  if (isReviewMode.value) {
+    // 复习模式：显示复习进度
+    const reviewIndex = currentWord.value.reviewIndex;
+    console.log('复习模式 - reviewIndex:', reviewIndex);
+
+    if (reviewIndex !== undefined && reviewIndex !== null) {
+      const progress = `${reviewIndex + 1}/${totalWords.value}`;
+      console.log('复习模式进度:', progress);
+      return progress;
+    } else {
+      // 如果reviewIndex还没有设置，显示默认值
+      const progress = `1/${totalWords.value}`;
+      console.log('复习模式默认进度:', progress);
+      return progress;
+    }
+  } else {
+    // 正常学习模式：显示学习进度
+    const progress = `${currentWord.value.wordRank}/${totalWords.value}`;
+    console.log('正常学习模式进度:', progress);
+    return progress;
+  }
+});
+
+const remainingText = computed(() => {
+  if (isReviewMode.value) {
+    // 复习模式：显示剩余复习数量
+    const reviewIndex = currentWord.value.reviewIndex;
+
+    if (reviewIndex !== undefined && reviewIndex !== null) {
+      const remaining = totalWords.value - (reviewIndex + 1);
+      console.log('复习模式剩余:', remaining);
+      return `剩余: ${remaining}个`;
+    } else {
+      // 如果reviewIndex还没有设置，显示默认值
+      const remaining = totalWords.value - 1;
+      console.log('复习模式默认剩余:', remaining);
+      return `剩余: ${remaining}个`;
+    }
+  } else {
+    // 正常学习模式：显示剩余学习数量或已学数量
+    if (isLoggedIn.value && userProgress.value && userProgress.value.totalStudied) {
+      return `已学: ${userProgress.value.totalStudied}个`;
+    } else {
+      const remaining = totalWords.value - currentWord.value.wordRank;
+      console.log('正常学习模式剩余:', remaining);
+      return `剩余: ${remaining}个`;
+    }
+  }
+});
+
+const progressPercentage = computed(() => {
+  if (isReviewMode.value) {
+    // 复习模式：使用复习索引计算进度
+    const reviewIndex = currentWord.value.reviewIndex || 0;
+    return ((reviewIndex + 1) / totalWords.value) * 100;
+  } else {
+    // 正常学习模式：使用wordRank计算进度
+    return (currentWord.value.wordRank / totalWords.value) * 100;
+  }
+});
 
 // 方法
 // 创建两个持久的音频对象
@@ -317,7 +381,7 @@ const playPronunciation = (type, e) => {
   });
 };
 
-const handleKnow = () => {
+const handleKnow = async () => {
   // 获取单词ID
   const wordId = currentWord.value.content.word.wordId;
 
@@ -326,15 +390,43 @@ const handleKnow = () => {
     knownWords.value.push(wordId);
   }
 
-  // 显示简短提示
-  uni.showToast({
-    title: '已标记为认识',
-    icon: 'success',
-    duration: 500  // 减少提示显示时间
-  });
-
-  // 如果用户已登录且这个单词之前被标记为不认识，可以考虑从未掌握单词表中移除
-  // 这个功能可以在后续版本中实现
+  // 如果是复习模式且用户已登录，更新生疏单词状态为已学习
+  if (isReviewModeActive.value && isLoggedIn.value) {
+    try {
+      const result = await updateUnknownWordStatus(currentWord.value);
+      if (result && result.success) {
+        console.log('生疏单词状态已更新为已学习');
+        // 显示成功提示
+        uni.showToast({
+          title: '已标记为认识，状态已更新',
+          icon: 'success',
+          duration: 800
+        });
+      } else {
+        // 更新失败，但仍然显示基本提示
+        uni.showToast({
+          title: '已标记为认识',
+          icon: 'success',
+          duration: 500
+        });
+      }
+    } catch (error) {
+      console.error('更新生疏单词状态时出错:', error);
+      // 出错时显示基本提示
+      uni.showToast({
+        title: '已标记为认识',
+        icon: 'success',
+        duration: 500
+      });
+    }
+  } else {
+    // 正常学习模式或用户未登录，显示基本提示
+    uni.showToast({
+      title: '已标记为认识',
+      icon: 'success',
+      duration: 500
+    });
+  }
 
   // 自动翻到下一个
   nextWord();
@@ -375,65 +467,128 @@ const handleForget = () => {
   }, 1500); // 1.5秒后自动进入下一个单词
 };
 
-const nextWord = () => {
+const nextWord = async () => {
   console.log("nextWord", currentWord.value.wordRank, totalWords.value);
 
-  // 检查是否还有更多单词可以加载
-  if (currentWord.value.wordRank < totalWords.value) {
-    // 获取下一个单词的序号
-    const nextWordRank = currentWord.value.wordRank + 1;
+  // 获取当前页面
+  const pages = getCurrentPages();
+  const currentPage = pages[pages.length - 1];
+  const options = currentPage.options || {};
+  const currentLibraryId = options.libraryId || libraryId.value;
 
-    // 获取当前页面
-    const pages = getCurrentPages();
-    const currentPage = pages[pages.length - 1];
-    const options = currentPage.options || {};
-    const currentLibraryId = options.libraryId || libraryId.value;
-
-    if (currentLibraryId) {
+  if (isReviewModeActive.value) {
+    // 复习模式 - 获取下一个生疏单词
+    try {
       // 使用更简洁的加载提示
       uni.showLoading({
         title: '加载中...',
-        mask: true  // 添加遮罩，防止用户多次点击
+        mask: true
       });
 
-      // 获取下一个单词
-      fetchWordData(currentLibraryId, nextWordRank)
-        .then(result => {
-          uni.hideLoading();
+      // 获取当前单词在生疏单词列表中的索引
+      const currentIndex = currentWord.value.reviewIndex || 0;
+      const reviewWordsList = currentWord.value.reviewWordsList || [];
 
+      console.log('复习模式 - 当前索引:', currentIndex, '总数:', reviewWordsList.length);
+
+      // 检查是否还有下一个生疏单词
+      if (currentIndex + 1 < reviewWordsList.length) {
+        // 有下一个生疏单词
+        const nextWordData = reviewWordsList[currentIndex + 1];
+
+        console.log('获取下一个生疏单词:', nextWordData);
+
+        // 获取下一个单词的详细信息
+        fetchWordDetail(currentLibraryId, nextWordData.wordRank).then(result => {
+          uni.hideLoading();
           if (result.success) {
-            // 单词已在 fetchWordData 中更新
-            console.log("成功加载下一个单词");
-          } else if (result.isLast) {
-            // 已经是最后一个单词
-            uni.showToast({
-              title: '恭喜你，学习完成！',
-              icon: 'success',
-              duration: 2000
-            });
+            // 设置复习索引
+            currentWord.value.reviewIndex = currentIndex + 1;
+            // 保持生疏单词列表
+            currentWord.value.reviewWordsList = reviewWordsList;
+            console.log('成功加载下一个生疏单词，新索引:', currentIndex + 1);
           } else {
-            // 获取失败
             uni.showToast({
-              title: '获取下一个单词失败',
+              title: '获取单词详情失败',
               icon: 'none'
             });
           }
         });
+      } else {
+        // 没有更多生疏单词
+        uni.hideLoading();
+        uni.showToast({
+          title: '恭喜你，复习完成！',
+          icon: 'success',
+          duration: 2000
+        });
+
+        // 延迟返回
+        setTimeout(() => {
+          uni.navigateBack();
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('获取下一个生疏单词失败:', err);
+      uni.hideLoading();
+      uni.showToast({
+        title: '获取下一个单词失败',
+        icon: 'none'
+      });
+    }
+  } else {
+    // 正常学习模式
+    // 检查是否还有更多单词可以加载
+    if (currentWord.value.wordRank < totalWords.value) {
+      // 获取下一个单词的序号
+      const nextWordRank = currentWord.value.wordRank + 1;
+
+      if (currentLibraryId) {
+        // 使用更简洁的加载提示
+        uni.showLoading({
+          title: '加载中...',
+          mask: true  // 添加遮罩，防止用户多次点击
+        });
+
+        // 获取下一个单词
+        fetchWordData(currentLibraryId, nextWordRank)
+          .then(result => {
+            uni.hideLoading();
+
+            if (result.success) {
+              // 单词已在 fetchWordData 中更新
+              console.log("成功加载下一个单词");
+            } else if (result.isLast) {
+              // 已经是最后一个单词
+              uni.showToast({
+                title: '恭喜你，学习完成！',
+                icon: 'success',
+                duration: 2000
+              });
+            } else {
+              // 获取失败
+              uni.showToast({
+                title: '获取下一个单词失败',
+                icon: 'none'
+              });
+            }
+          });
+      } else {
+        // 没有词库ID，无法获取更多单词
+        uni.showToast({
+          title: '恭喜你，学习完成！',
+          icon: 'success',
+          duration: 2000
+        });
+      }
     } else {
-      // 没有词库ID，无法获取更多单词
+      // 已经学习完所有单词
       uni.showToast({
         title: '恭喜你，学习完成！',
         icon: 'success',
         duration: 2000
       });
     }
-  } else {
-    // 已经学习完所有单词
-    uni.showToast({
-      title: '恭喜你，学习完成！',
-      icon: 'success',
-      duration: 2000
-    });
   }
 };
 
@@ -447,6 +602,54 @@ const updateAudioSources = () => {
   const word = currentWord.value.headWord;
   ukAudio.value.src = `https://dict.youdao.com/dictvoice?audio=${word}&type=1`;
   usAudio.value.src = `https://dict.youdao.com/dictvoice?audio=${word}&type=2`;
+};
+
+// 获取单个单词详细数据（专用于复习模式）
+const fetchWordDetail = (libraryId, wordRank) => {
+  console.log('获取单词详细数据:', libraryId, '单词序号:', wordRank);
+
+  // 调用云函数获取单词详细信息
+  return wx.cloud.callFunction({
+    name: 'getWordDetail',
+    data: {
+      bookId: libraryId,
+      wordRank: wordRank
+    }
+  })
+  .then(res => {
+    console.log("获取单词详细数据结果:", res.result);
+
+    if (res.result.code === 0 && res.result.data && res.result.data.word) {
+      // 保存复习相关的数据
+      const reviewIndex = currentWord.value.reviewIndex;
+      const reviewWordsList = currentWord.value.reviewWordsList;
+
+      // 更新当前单词数据
+      currentWord.value = res.result.data.word;
+
+      // 恢复复习相关的数据
+      if (reviewIndex !== undefined) {
+        currentWord.value.reviewIndex = reviewIndex;
+      }
+      if (reviewWordsList) {
+        currentWord.value.reviewWordsList = reviewWordsList;
+      }
+
+      console.log("更新当前单词:", currentWord.value);
+
+      // 更新音频源
+      updateAudioSources();
+
+      return { success: true, word: res.result.data.word };
+    } else {
+      console.error("获取单词详细数据失败", res.result.message);
+      return { success: false, error: res.result.message };
+    }
+  })
+  .catch(err => {
+    console.error("调用获取单词详细数据云函数失败", err);
+    return { success: false, error: err.message };
+  });
 };
 
 // 获取单个单词数据
@@ -574,6 +777,52 @@ const checkLoginStatus = () => {
 
 // 用户学习进度相关逻辑已整合到 getWordsByBookId 云函数中
 
+// 更新生疏单词状态为已学习
+const updateUnknownWordStatus = async (word) => {
+  if (!isLoggedIn.value || !libraryId.value) {
+    console.log('用户未登录或词库ID为空，不更新生疏单词状态');
+    return;
+  }
+
+  try {
+    // 获取单词ID，优先使用wordId，如果没有则使用headWord
+    const wordId = word.content.word.wordId || word.headWord;
+
+    // 确保单词序号有效
+    if (!word.wordRank || word.wordRank < 1) {
+      console.error('单词序号无效，不更新生疏单词状态');
+      return;
+    }
+
+    console.log('更新生疏单词状态为已学习:', {
+      bookId: libraryId.value,
+      wordId: wordId,
+      wordRank: word.wordRank
+    });
+
+    const res = await wx.cloud.callFunction({
+      name: 'updateUnknownWordStatus',
+      data: {
+        bookId: libraryId.value,
+        wordId: wordId,
+        wordRank: word.wordRank,
+        status: 'learned' // 设置状态为已学习
+      }
+    });
+
+    if (res.result.code === 0) {
+      console.log('更新生疏单词状态成功:', res.result.data);
+      return { success: true };
+    } else {
+      console.error('更新生疏单词状态失败:', res.result.message);
+      return { success: false, error: res.result.message };
+    }
+  } catch (error) {
+    console.error('更新生疏单词状态失败:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 // 保存未掌握的单词
 const saveUnknownWord = async (word) => {
   if (!isLoggedIn.value || !libraryId.value) {
@@ -639,8 +888,13 @@ onLoad(async (options) => {
   const bookId = options.libraryId;
   const libraryName = options.libraryName ? decodeURIComponent(options.libraryName) : '单词学习';
   const wordCount = options.wordCount ? parseInt(options.wordCount) : 0;
+  const isReview = options.isReview === 'true'; // 是否是复习模式
 
-  console.log('解析后的参数:', { bookId, libraryName, wordCount });
+  console.log('解析后的参数:', { bookId, libraryName, wordCount, isReview });
+
+  // 设置复习模式状态
+  isReviewModeActive.value = isReview;
+  console.log('设置复习模式状态:', isReviewModeActive.value);
 
   // 设置总单词数
   if (wordCount > 0) {
@@ -654,19 +908,93 @@ onLoad(async (options) => {
     // 检查用户登录状态
     checkLoginStatus();
 
-    // 从第一个单词开始，云函数会自动获取用户进度
-    console.log('从第一个单词开始，云函数会自动获取用户进度');
-    startRank.value = 1;
+    if (isReview) {
+      // 复习模式 - 获取生疏单词
+      console.log('复习模式 - 获取生疏单词');
 
-    console.log('开始获取词库数据, bookId:', bookId);
-    // 获取词库数据，云函数会自动获取用户进度
-    fetchWordLibrary(bookId, startRank.value);
-
-    // 设置页面标题
-    if (libraryName) {
-      uni.setNavigationBarTitle({
-        title: libraryName
+      // 显示加载提示
+      uni.showLoading({
+        title: '加载生疏单词...',
+        mask: true
       });
+
+      try {
+        // 调用云函数获取该词库的生疏单词列表
+        const res = await wx.cloud.callFunction({
+          name: 'getUnknownWords',
+          data: {
+            bookId: bookId,
+            status: 'unknown'
+          }
+        });
+
+        console.log('获取生疏单词列表结果:', res.result);
+
+        if (res.result.code === 0 && res.result.data && res.result.data.words.length > 0) {
+          // 保存生疏单词列表到全局变量，方便后续使用
+          currentWord.value.reviewWordsList = res.result.data.words;
+
+          // 设置总单词数为生疏单词总数
+          totalWords.value = res.result.data.total;
+
+          // 先设置复习索引为0，再获取第一个生疏单词的详细信息
+          currentWord.value.reviewIndex = 0;
+
+          const firstWord = res.result.data.words[0];
+          fetchWordDetail(bookId, firstWord.wordRank).then(result => {
+            uni.hideLoading();
+            if (result.success) {
+              console.log('成功加载第一个生疏单词，复习索引:', currentWord.value.reviewIndex);
+            } else {
+              uni.showToast({
+                title: '获取单词详情失败',
+                icon: 'none'
+              });
+            }
+          });
+
+          // 设置页面标题
+          uni.setNavigationBarTitle({
+            title: `${libraryName} - 生疏词复习`
+          });
+        } else {
+          // 没有生疏单词
+          uni.hideLoading();
+          uni.showToast({
+            title: '该词库没有生疏单词需要复习',
+            icon: 'none',
+            duration: 2000
+          });
+
+          // 延迟返回
+          setTimeout(() => {
+            uni.navigateBack();
+          }, 2000);
+        }
+      } catch (err) {
+        console.error('获取生疏单词失败:', err);
+        uni.hideLoading();
+        uni.showToast({
+          title: '获取生疏单词失败',
+          icon: 'none'
+        });
+      }
+    } else {
+      // 正常学习模式
+      // 从第一个单词开始，云函数会自动获取用户进度
+      console.log('从第一个单词开始，云函数会自动获取用户进度');
+      startRank.value = 1;
+
+      console.log('开始获取词库数据, bookId:', bookId);
+      // 获取词库数据，云函数会自动获取用户进度
+      fetchWordLibrary(bookId, startRank.value);
+
+      // 设置页面标题
+      if (libraryName) {
+        uni.setNavigationBarTitle({
+          title: libraryName
+        });
+      }
     }
   } else {
     console.warn('未指定词库ID，使用示例数据');
