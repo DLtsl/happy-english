@@ -2,7 +2,7 @@
   <view class="container">
     <!-- 顶部标题 -->
     <view class="header glass-effect">
-      <text class="header-title">{{ activeTab === 'libraries' ? '词库选择' : '生疏词本' }}</text>
+      <text class="header-title">{{ activeTab === 'libraries' ? '词库选择' : '错题本' }}</text>
       <text class="header-subtitle">{{ activeTab === 'libraries' ? '选择适合你的词库开始学习' : '复习你标记为不认识的单词' }}</text>
     </view>
 
@@ -20,7 +20,7 @@
         :class="{ active: activeTab === 'unknown' }"
         @click="switchToUnknownWords"
       >
-        <text class="main-tab-text">生疏词本</text>
+        <text class="main-tab-text">错题本</text>
       </view>
     </view>
 
@@ -104,25 +104,60 @@
       </view>
     </scroll-view>
 
-    <!-- 生疏词本列表 -->
+    <!-- 错题本列表 -->
     <scroll-view scroll-y class="library-list" v-if="activeTab === 'unknown'">
       <view v-if="isLoading" class="loading-container glass-effect">
         <text class="loading-text">加载中...</text>
       </view>
       <view v-else-if="unknownWordsByBook.length === 0" class="empty-container glass-effect">
-        <text class="empty-title">暂无生疏单词</text>
+        <text class="empty-title">暂无错题</text>
         <text class="empty-subtitle">学习词库并标记不认识的单词，它们会出现在这里</text>
         <view class="empty-action" @click="activeTab = 'libraries'">
           <text class="empty-action-text">去学习</text>
           <text class="empty-action-icon">→</text>
         </view>
       </view>
-      <view
-        v-else
-        v-for="(bookData, index) in unknownWordsByBook"
-        :key="index"
-        class="library-card glass-effect"
-      >
+
+      <!-- 小测验入口和错题列表 -->
+      <template v-else>
+        <!-- 小测验入口 -->
+        <view class="quiz-card glass-effect" @click="showQuizModal">
+          <view class="quiz-header">
+            <view class="quiz-icon">🎯</view>
+            <view class="quiz-info">
+              <text class="quiz-title">随机小测验</text>
+              <text class="quiz-subtitle">从错题中随机选择单词进行测验</text>
+            </view>
+            <view class="quiz-badge">
+              <text class="badge-text">推荐</text>
+            </view>
+          </view>
+          <view class="quiz-stats">
+            <view class="stat-item">
+              <text class="stat-value">{{ totalUnknownWords }}</text>
+              <text class="stat-label">总错题</text>
+            </view>
+            <view class="stat-item">
+              <text class="stat-value">{{ Math.min(50, totalUnknownWords) }}</text>
+              <text class="stat-label">默认题数</text>
+            </view>
+            <view class="stat-item">
+              <text class="stat-value">10</text>
+              <text class="stat-label">最少题数</text>
+            </view>
+          </view>
+          <view class="quiz-button">
+            <text class="quiz-button-text">开始测验</text>
+            <text class="quiz-button-icon">🚀</text>
+          </view>
+        </view>
+
+        <!-- 错题列表 -->
+        <view
+          v-for="(bookData, index) in unknownWordsByBook"
+          :key="index"
+          class="library-card glass-effect"
+        >
         <view class="library-header">
           <!-- 使用封面图替代图标 -->
           <view class="library-icon" :class="bookData.color">
@@ -131,7 +166,7 @@
           </view>
           <view class="library-info">
             <text class="library-name">{{ bookData.name || '未知词库' }}</text>
-            <text class="library-count">{{ bookData.unknownCount }}个生疏单词</text>
+            <text class="library-count">{{ bookData.unknownCount }}个错题</text>
           </view>
           <view v-if="bookData.difficulty" class="library-badge" :class="'difficulty-' + getDifficultyClass(bookData.difficulty)">
             <text class="badge-text">{{ bookData.difficulty }}</text>
@@ -144,6 +179,7 @@
           <text class="learn-now-icon">→</text>
         </view>
       </view>
+      </template>
     </scroll-view>
 
     <!-- 底部按钮（暂时隐藏） -->
@@ -151,6 +187,44 @@
       <text class="button-icon">▶️</text>
       <text class="button-text">开始学习</text>
     </view> -->
+
+    <!-- 小测验设置弹窗 -->
+    <view v-if="showQuizSettings" class="modal-overlay" @click="hideQuizModal">
+      <view class="modal-content" @click.stop>
+        <view class="modal-header">
+          <text class="modal-title">小测验设置</text>
+          <view class="modal-close" @click="hideQuizModal">✕</view>
+        </view>
+        <view class="modal-body">
+          <view class="setting-item">
+            <text class="setting-label">测验题数</text>
+            <text class="setting-desc">从你的错题中随机选择</text>
+          </view>
+          <view class="input-container">
+            <input
+              class="quiz-input"
+              type="number"
+              v-model="quizWordCount"
+              :placeholder="`默认 ${Math.min(50, totalUnknownWords)} 题`"
+              maxlength="3"
+            />
+            <text class="input-suffix">题</text>
+          </view>
+          <view class="setting-tips">
+            <text class="tip-text">• 最少 10 题，最多 {{ totalUnknownWords }} 题</text>
+            <text class="tip-text">• 建议 20-50 题，效果最佳</text>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <view class="modal-button cancel" @click="hideQuizModal">
+            <text class="button-text">取消</text>
+          </view>
+          <view class="modal-button confirm" @click="startQuiz">
+            <text class="button-text">开始测验</text>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -178,6 +252,10 @@ const isLoggedIn = ref(false);
 const userProgress = ref({});
 // 生疏词本数据
 const unknownWordsByBook = ref([]);
+
+// 小测验相关数据
+const showQuizSettings = ref(false);
+const quizWordCount = ref('');
 
 // 根据搜索过滤词库
 const filteredLibraries = computed(() => {
@@ -212,6 +290,11 @@ const filteredLibraries = computed(() => {
   }
 
   return result;
+});
+
+// 计算总错题数
+const totalUnknownWords = computed(() => {
+  return unknownWordsByBook.value.reduce((total, book) => total + book.unknownCount, 0);
 });
 
 // 选择词库
@@ -444,6 +527,75 @@ const startReviewingLibrary = (bookData) => {
   // 跳转到学习页面
   uni.navigateTo({
     url: url
+  });
+};
+
+// 显示小测验设置弹窗
+const showQuizModal = () => {
+  if (totalUnknownWords.value < 10) {
+    uni.showToast({
+      title: '错题数量不足10个，无法开始测验',
+      icon: 'none',
+      duration: 2000
+    });
+    return;
+  }
+
+  // 设置默认题数
+  quizWordCount.value = Math.min(50, totalUnknownWords.value).toString();
+  showQuizSettings.value = true;
+};
+
+// 隐藏小测验设置弹窗
+const hideQuizModal = () => {
+  showQuizSettings.value = false;
+  quizWordCount.value = '';
+};
+
+// 开始小测验
+const startQuiz = () => {
+  const count = parseInt(quizWordCount.value) || Math.min(50, totalUnknownWords.value);
+
+  // 验证题数
+  if (count < 10) {
+    uni.showToast({
+      title: '最少需要10题',
+      icon: 'none'
+    });
+    return;
+  }
+
+  if (count > totalUnknownWords.value) {
+    uni.showToast({
+      title: `最多只能选择${totalUnknownWords.value}题`,
+      icon: 'none'
+    });
+    return;
+  }
+
+  // 隐藏弹窗
+  hideQuizModal();
+
+  // 显示加载提示
+  uni.showLoading({
+    title: '准备测验中...'
+  });
+
+  // 跳转到小测验页面
+  const url = `/pages/word/study?isQuiz=true&quizCount=${count}`;
+
+  uni.navigateTo({
+    url: url,
+    success: () => {
+      uni.hideLoading();
+    },
+    fail: () => {
+      uni.hideLoading();
+      uni.showToast({
+        title: '跳转失败',
+        icon: 'none'
+      });
+    }
   });
 };
 
@@ -936,5 +1088,241 @@ onShow(() => {
 /* 复习按钮样式 */
 .review-button {
   background: linear-gradient(90deg, #8b5cf6 0%, #6366f1 100%);
+}
+
+/* 小测验卡片样式 */
+.quiz-card {
+  margin-bottom: 30rpx;
+  border: 2rpx solid #f59e0b;
+  position: relative;
+  overflow: hidden;
+}
+
+.quiz-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6rpx;
+  background: linear-gradient(90deg, #f59e0b 0%, #f97316 100%);
+}
+
+.quiz-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.quiz-icon {
+  width: 80rpx;
+  height: 80rpx;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  margin-right: 20rpx;
+}
+
+.quiz-info {
+  flex: 1;
+}
+
+.quiz-title {
+  font-size: 34rpx;
+  font-weight: bold;
+  color: #1f2937;
+  margin-bottom: 8rpx;
+  display: block;
+}
+
+.quiz-subtitle {
+  font-size: 26rpx;
+  color: #6b7280;
+  display: block;
+}
+
+.quiz-badge {
+  background: #f59e0b;
+  padding: 8rpx 20rpx;
+  border-radius: 50rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+}
+
+.quiz-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 20rpx 0;
+  border-top: 2rpx solid #f3f4f6;
+  border-bottom: 2rpx solid #f3f4f6;
+  margin-bottom: 20rpx;
+}
+
+.quiz-button {
+  background: linear-gradient(90deg, #f59e0b 0%, #f97316 100%);
+  padding: 20rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  transition: all 0.3s ease;
+}
+
+.quiz-button:active {
+  transform: scale(0.98);
+}
+
+.quiz-button-text {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.quiz-button-icon {
+  font-size: 28rpx;
+  color: #ffffff;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #ffffff;
+  border-radius: 20rpx;
+  margin: 40rpx;
+  max-width: 600rpx;
+  width: 100%;
+  overflow: hidden;
+  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 40rpx 40rpx 20rpx;
+  border-bottom: 2rpx solid #f3f4f6;
+}
+
+.modal-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #1f2937;
+}
+
+.modal-close {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  color: #6b7280;
+  border-radius: 50%;
+  background: #f3f4f6;
+}
+
+.modal-body {
+  padding: 40rpx;
+}
+
+.setting-item {
+  margin-bottom: 30rpx;
+}
+
+.setting-label {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: #1f2937;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.setting-desc {
+  font-size: 26rpx;
+  color: #6b7280;
+  display: block;
+}
+
+.input-container {
+  display: flex;
+  align-items: center;
+  background: #f9fafb;
+  border: 2rpx solid #e5e7eb;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 30rpx;
+}
+
+.quiz-input {
+  flex: 1;
+  font-size: 32rpx;
+  color: #1f2937;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.input-suffix {
+  font-size: 28rpx;
+  color: #6b7280;
+  margin-left: 10rpx;
+}
+
+.setting-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.tip-text {
+  font-size: 24rpx;
+  color: #6b7280;
+  display: block;
+}
+
+.modal-footer {
+  display: flex;
+  border-top: 2rpx solid #f3f4f6;
+}
+
+.modal-button {
+  flex: 1;
+  padding: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  font-weight: 500;
+}
+
+.modal-button.cancel {
+  color: #374151;
+  background: #e5e7eb;
+  border-right: 2rpx solid #d1d5db;
+}
+
+.modal-button.confirm {
+  color: #ffffff;
+  background: linear-gradient(90deg, #f59e0b 0%, #f97316 100%);
+}
+
+.modal-button:active {
+  opacity: 0.8;
 }
 </style>

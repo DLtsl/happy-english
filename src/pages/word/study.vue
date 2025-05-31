@@ -250,11 +250,14 @@ const userProgress = ref(null);
 const libraryId = ref('');
 const startRank = ref(1);
 const isReviewModeActive = ref(false); // 存储复习模式状态
+const isQuizModeActive = ref(false); // 存储小测验模式状态
 
 // 计算属性
 const isReviewMode = computed(() => {
   console.log('isReviewMode 检查 - isReviewModeActive:', isReviewModeActive.value);
-  return isReviewModeActive.value;
+  console.log('isReviewMode 检查 - isQuizModeActive:', isQuizModeActive.value);
+  // 复习模式或小测验模式都使用相同的逻辑
+  return isReviewModeActive.value || isQuizModeActive.value;
 });
 
 const currentProgressText = computed(() => {
@@ -390,8 +393,8 @@ const handleKnow = async () => {
     knownWords.value.push(wordId);
   }
 
-  // 如果是复习模式且用户已登录，更新生疏单词状态为已学习
-  if (isReviewModeActive.value && isLoggedIn.value) {
+  // 如果是复习模式或小测验模式且用户已登录，更新生疏单词状态为已学习
+  if ((isReviewModeActive.value || isQuizModeActive.value) && isLoggedIn.value) {
     try {
       const result = await updateUnknownWordStatus(currentWord.value);
       if (result && result.success) {
@@ -476,8 +479,8 @@ const nextWord = async () => {
   const options = currentPage.options || {};
   const currentLibraryId = options.libraryId || libraryId.value;
 
-  if (isReviewModeActive.value) {
-    // 复习模式 - 获取下一个生疏单词
+  if (isReviewModeActive.value || isQuizModeActive.value) {
+    // 复习模式或小测验模式 - 获取下一个生疏单词
     try {
       // 使用更简洁的加载提示
       uni.showLoading({
@@ -499,7 +502,9 @@ const nextWord = async () => {
         console.log('获取下一个生疏单词:', nextWordData);
 
         // 获取下一个单词的详细信息
-        fetchWordDetail(currentLibraryId, nextWordData.wordRank).then(result => {
+        // 在小测验模式下，使用单词自己的bookId，因为可能来自不同词库
+        const wordBookId = isQuizModeActive.value ? nextWordData.bookId : currentLibraryId;
+        fetchWordDetail(wordBookId, nextWordData.wordRank).then(result => {
           uni.hideLoading();
           if (result.success) {
             // 设置复习索引
@@ -517,8 +522,9 @@ const nextWord = async () => {
       } else {
         // 没有更多生疏单词
         uni.hideLoading();
+        const completionMessage = isQuizModeActive.value ? '恭喜你，测验完成！' : '恭喜你，复习完成！';
         uni.showToast({
-          title: '恭喜你，复习完成！',
+          title: completionMessage,
           icon: 'success',
           duration: 2000
         });
@@ -779,8 +785,8 @@ const checkLoginStatus = () => {
 
 // 更新生疏单词状态为已学习
 const updateUnknownWordStatus = async (word) => {
-  if (!isLoggedIn.value || !libraryId.value) {
-    console.log('用户未登录或词库ID为空，不更新生疏单词状态');
+  if (!isLoggedIn.value) {
+    console.log('用户未登录，不更新生疏单词状态');
     return;
   }
 
@@ -794,8 +800,22 @@ const updateUnknownWordStatus = async (word) => {
       return;
     }
 
+    // 获取bookId：在小测验模式下从reviewWordsList中获取，否则使用libraryId
+    let bookId = libraryId.value;
+    if (isQuizModeActive.value && word.reviewWordsList && word.reviewIndex !== undefined) {
+      const currentWordData = word.reviewWordsList[word.reviewIndex];
+      if (currentWordData && currentWordData.bookId) {
+        bookId = currentWordData.bookId;
+      }
+    }
+
+    if (!bookId) {
+      console.error('无法获取词库ID，不更新生疏单词状态');
+      return;
+    }
+
     console.log('更新生疏单词状态为已学习:', {
-      bookId: libraryId.value,
+      bookId: bookId,
       wordId: wordId,
       wordRank: word.wordRank
     });
@@ -803,7 +823,7 @@ const updateUnknownWordStatus = async (word) => {
     const res = await wx.cloud.callFunction({
       name: 'updateUnknownWordStatus',
       data: {
-        bookId: libraryId.value,
+        bookId: bookId,
         wordId: wordId,
         wordRank: word.wordRank,
         status: 'learned' // 设置状态为已学习
@@ -889,24 +909,103 @@ onLoad(async (options) => {
   const libraryName = options.libraryName ? decodeURIComponent(options.libraryName) : '单词学习';
   const wordCount = options.wordCount ? parseInt(options.wordCount) : 0;
   const isReview = options.isReview === 'true'; // 是否是复习模式
+  const isQuiz = options.isQuiz === 'true'; // 是否是小测验模式
+  const quizCount = options.quizCount ? parseInt(options.quizCount) : 50; // 小测验题数
 
-  console.log('解析后的参数:', { bookId, libraryName, wordCount, isReview });
+  console.log('解析后的参数:', { bookId, libraryName, wordCount, isReview, isQuiz, quizCount });
 
   // 设置复习模式状态
   isReviewModeActive.value = isReview;
+  isQuizModeActive.value = isQuiz;
   console.log('设置复习模式状态:', isReviewModeActive.value);
+  console.log('设置小测验模式状态:', isQuizModeActive.value);
 
   // 设置总单词数
   if (wordCount > 0) {
     totalWords.value = wordCount;
   }
 
-  if (bookId) {
+  // 检查用户登录状态
+  checkLoginStatus();
+
+  if (isQuiz) {
+    // 小测验模式 - 获取随机错题
+    console.log('小测验模式 - 获取随机错题，题数:', quizCount);
+
+    // 显示加载提示
+    uni.showLoading({
+      title: '准备测验题目...',
+      mask: true
+    });
+
+    try {
+      // 调用云函数获取随机错题
+      const res = await wx.cloud.callFunction({
+        name: 'getRandomQuizWords',
+        data: {
+          count: quizCount
+        }
+      });
+
+      console.log('获取随机测验单词结果:', res.result);
+
+      if (res.result.code === 0 && res.result.data && res.result.data.words.length > 0) {
+        // 保存测验单词列表到全局变量
+        currentWord.value.reviewWordsList = res.result.data.words;
+
+        // 设置总单词数为测验题数
+        totalWords.value = res.result.data.totalCount;
+
+        // 先设置复习索引为0，再获取第一个测验单词的详细信息
+        currentWord.value.reviewIndex = 0;
+
+        const firstWord = res.result.data.words[0];
+        fetchWordDetail(firstWord.bookId, firstWord.wordRank).then(result => {
+          uni.hideLoading();
+          if (result.success) {
+            console.log('成功加载第一个测验单词，复习索引:', currentWord.value.reviewIndex);
+          } else {
+            uni.showToast({
+              title: '获取单词详情失败',
+              icon: 'none'
+            });
+          }
+        });
+
+        // 设置页面标题
+        uni.setNavigationBarTitle({
+          title: `随机小测验 (${quizCount}题)`
+        });
+      } else {
+        // 没有可用的错题
+        uni.hideLoading();
+        uni.showToast({
+          title: res.result.message || '没有可用的错题',
+          icon: 'none',
+          duration: 2000
+        });
+
+        // 延迟返回
+        setTimeout(() => {
+          uni.navigateBack();
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('获取随机测验单词失败:', err);
+      uni.hideLoading();
+      uni.showToast({
+        title: '获取测验题目失败',
+        icon: 'none'
+      });
+
+      // 延迟返回
+      setTimeout(() => {
+        uni.navigateBack();
+      }, 2000);
+    }
+  } else if (bookId) {
     // 保存词库ID到响应式变量，方便后续使用
     libraryId.value = bookId;
-
-    // 检查用户登录状态
-    checkLoginStatus();
 
     if (isReview) {
       // 复习模式 - 获取生疏单词
