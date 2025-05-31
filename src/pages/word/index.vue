@@ -63,6 +63,11 @@
           <view class="library-info">
             <text class="library-name">{{ library.name }}</text>
             <text class="library-count">{{ library.wordCount }}个单词</text>
+            <!-- 显示排序学习进度 -->
+            <text v-if="library.sortProgress && library.selectedSort && library.selectedSort !== 'default'"
+                  class="sort-progress">
+              {{ getSortProgressText(library) }}
+            </text>
           </view>
           <view class="library-badge" :class="'difficulty-' + getDifficultyClass(library.difficulty)">
             <text class="badge-text">{{ library.difficulty }}</text>
@@ -96,10 +101,30 @@
           </view>
         </view>
 
-        <!-- 立即学习按钮 -->
-        <view class="learn-now-button" @click.stop="startLearningLibrary(library)">
-          <text class="learn-now-text">立即学习</text>
-          <text class="learn-now-icon">→</text>
+        <!-- 学习选项 -->
+        <view class="learning-options">
+          <!-- 排序选择 -->
+          <view class="sort-selector">
+            <text class="sort-label">学习顺序：</text>
+            <picker
+              :value="library.selectedSortIndex || 0"
+              :range="sortOptions"
+              range-key="label"
+              @change="onSortChange($event, library)"
+              class="sort-picker"
+            >
+              <view class="sort-display">
+                <text class="sort-text">{{ sortOptions[library.selectedSortIndex || 0].label }}</text>
+                <text class="sort-arrow">▼</text>
+              </view>
+            </picker>
+          </view>
+
+          <!-- 立即学习按钮 -->
+          <view class="learn-now-button" @click.stop="startLearningLibrary(library)">
+            <text class="learn-now-text">立即学习</text>
+            <text class="learn-now-icon">→</text>
+          </view>
         </view>
       </view>
     </scroll-view>
@@ -229,7 +254,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { onShow } from '@dcloudio/uni-app'
 
 // 搜索数据
@@ -256,6 +281,13 @@ const unknownWordsByBook = ref([]);
 // 小测验相关数据
 const showQuizSettings = ref(false);
 const quizWordCount = ref('');
+
+// 排序选项
+const sortOptions = ref([
+  { value: 'default', label: '默认顺序' },
+  { value: 'alphabetical', label: '字母顺序 (A-Z)' },
+  { value: 'reverse', label: '字母倒序 (Z-A)' }
+]);
 
 // 根据搜索过滤词库
 const filteredLibraries = computed(() => {
@@ -323,6 +355,49 @@ const selectLibrary = (library) => {
 
 
 
+// 处理排序选择变化
+const onSortChange = (event, library) => {
+  const selectedIndex = event.detail.value;
+  const selectedSort = sortOptions.value[selectedIndex];
+
+  console.log('选择排序方式:', selectedSort.label, '词库:', library.name);
+
+  // 使用Vue.set或者重新赋值来确保响应式更新
+  const updatedLibrary = { ...library };
+  updatedLibrary.selectedSortIndex = selectedIndex;
+  updatedLibrary.selectedSort = selectedSort.value;
+
+  // 找到并更新词库列表中的对应项
+  const libraryIndex = libraries.value.findIndex(lib => lib.bookId === library.bookId);
+  if (libraryIndex !== -1) {
+    libraries.value[libraryIndex] = updatedLibrary;
+  }
+
+  // 强制更新视图
+  nextTick(() => {
+    console.log('排序选择已更新，当前选择:', libraries.value[libraryIndex]?.selectedSort);
+  });
+
+  // 显示提示
+  uni.showToast({
+    title: `已选择: ${selectedSort.label}`,
+    icon: 'none',
+    duration: 1000
+  });
+};
+
+// 获取排序进度文本
+const getSortProgressText = (library) => {
+  if (!library.sortProgress || !library.selectedSort || library.selectedSort === 'default') {
+    return '';
+  }
+
+  const sortLabel = sortOptions.value.find(opt => opt.value === library.selectedSort)?.label || '排序';
+  const progress = library.sortProgress;
+
+  return `${sortLabel}: ${progress.totalStudied}/${library.wordCount}`;
+};
+
 // 立即学习指定词库
 const startLearningLibrary = (library) => {
   console.log('开始学习:', library.name);
@@ -330,14 +405,17 @@ const startLearningLibrary = (library) => {
   // 获取词库ID（使用 bookId）
   const libraryId = library.bookId;
 
+  // 获取选择的排序方式
+  const sortType = library.selectedSort || 'default';
+
   // 显示提示
   uni.showToast({
     title: `开始学习: ${library.name}`,
     icon: 'success'
   });
 
-  // 构建URL参数 - 不再传递进度信息，由云函数自动获取
-  const url = `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}&wordCount=${library.wordCount}`;
+  // 构建URL参数 - 添加排序参数
+  const url = `/pages/word/study?libraryId=${libraryId}&libraryName=${encodeURIComponent(library.name)}&wordCount=${library.wordCount}&sortType=${sortType}`;
 
   // 跳转到学习页面
   uni.navigateTo({
@@ -804,6 +882,14 @@ onShow(() => {
   line-height: 1.2;
 }
 
+.sort-progress {
+  font-size: 24rpx;
+  color: #8b5cf6;
+  margin-top: 4rpx;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
 .library-badge {
   padding: 8rpx 20rpx;
   border-radius: 50rpx;
@@ -882,6 +968,52 @@ onShow(() => {
   filter: blur(4rpx);
 }
 
+/* 学习选项样式 */
+.learning-options {
+  margin-top: 20rpx;
+}
+
+.sort-selector {
+  margin-bottom: 15rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sort-label {
+  font-size: 26rpx;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.sort-picker {
+  flex: 1;
+  margin-left: 20rpx;
+}
+
+.sort-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f9fafb;
+  border: 2rpx solid #e5e7eb;
+  border-radius: 8rpx;
+  padding: 12rpx 16rpx;
+  min-height: 60rpx;
+}
+
+.sort-text {
+  font-size: 26rpx;
+  color: #374151;
+  flex: 1;
+}
+
+.sort-arrow {
+  font-size: 20rpx;
+  color: #9ca3af;
+  margin-left: 10rpx;
+}
+
 /* 立即学习按钮样式 */
 .learn-now-button {
   background: linear-gradient(90deg, #10b981 0%, #059669 100%);
@@ -891,7 +1023,6 @@ onShow(() => {
   align-items: center;
   justify-content: center;
   gap: 10rpx;
-  margin-top: 20rpx;
   transition: all 0.3s ease;
 }
 

@@ -251,23 +251,41 @@ const libraryId = ref('');
 const startRank = ref(1);
 const isReviewModeActive = ref(false); // 存储复习模式状态
 const isQuizModeActive = ref(false); // 存储小测验模式状态
+const isSortModeActive = ref(false); // 存储排序模式状态
+const sortType = ref('default'); // 排序类型
+const currentSortIndex = ref(0); // 当前排序索引
+
+// 排序选项（与index.vue保持一致）
+const sortOptions = ref([
+  { value: 'default', label: '默认顺序' },
+  { value: 'alphabetical', label: '字母顺序 (A-Z)' },
+  { value: 'reverse', label: '字母倒序 (Z-A)' }
+]);
 
 // 计算属性
 const isReviewMode = computed(() => {
   console.log('isReviewMode 检查 - isReviewModeActive:', isReviewModeActive.value);
   console.log('isReviewMode 检查 - isQuizModeActive:', isQuizModeActive.value);
-  // 复习模式或小测验模式都使用相同的逻辑
-  return isReviewModeActive.value || isQuizModeActive.value;
+  console.log('isReviewMode 检查 - isSortModeActive:', isSortModeActive.value);
+  // 复习模式、小测验模式或排序模式都使用相同的逻辑
+  return isReviewModeActive.value || isQuizModeActive.value || isSortModeActive.value;
 });
 
 const currentProgressText = computed(() => {
   console.log('=== 进度计算调试 ===');
   console.log('isReviewMode:', isReviewMode.value);
+  console.log('isSortModeActive:', isSortModeActive.value);
+  console.log('currentSortIndex:', currentSortIndex.value);
   console.log('currentWord.reviewIndex:', currentWord.value.reviewIndex);
   console.log('currentWord.wordRank:', currentWord.value.wordRank);
   console.log('totalWords:', totalWords.value);
 
-  if (isReviewMode.value) {
+  if (isSortModeActive.value) {
+    // 排序模式：显示排序进度
+    const progress = `${currentSortIndex.value + 1}/${totalWords.value}`;
+    console.log('排序模式进度:', progress);
+    return progress;
+  } else if (isReviewMode.value) {
     // 复习模式：显示复习进度
     const reviewIndex = currentWord.value.reviewIndex;
     console.log('复习模式 - reviewIndex:', reviewIndex);
@@ -291,7 +309,12 @@ const currentProgressText = computed(() => {
 });
 
 const remainingText = computed(() => {
-  if (isReviewMode.value) {
+  if (isSortModeActive.value) {
+    // 排序模式：显示剩余数量
+    const remaining = totalWords.value - (currentSortIndex.value + 1);
+    console.log('排序模式剩余:', remaining);
+    return `剩余: ${remaining}个`;
+  } else if (isReviewMode.value) {
     // 复习模式：显示剩余复习数量
     const reviewIndex = currentWord.value.reviewIndex;
 
@@ -318,7 +341,10 @@ const remainingText = computed(() => {
 });
 
 const progressPercentage = computed(() => {
-  if (isReviewMode.value) {
+  if (isSortModeActive.value) {
+    // 排序模式：使用排序索引计算进度
+    return ((currentSortIndex.value + 1) / totalWords.value) * 100;
+  } else if (isReviewMode.value) {
     // 复习模式：使用复习索引计算进度
     const reviewIndex = currentWord.value.reviewIndex || 0;
     return ((reviewIndex + 1) / totalWords.value) * 100;
@@ -479,7 +505,73 @@ const nextWord = async () => {
   const options = currentPage.options || {};
   const currentLibraryId = options.libraryId || libraryId.value;
 
-  if (isReviewModeActive.value || isQuizModeActive.value) {
+  if (isSortModeActive.value) {
+    // 排序模式 - 获取下一个排序单词
+    try {
+      // 使用更简洁的加载提示
+      uni.showLoading({
+        title: '加载中...',
+        mask: true
+      });
+
+      // 检查是否还有下一个单词
+      if (currentSortIndex.value + 1 < totalWords.value) {
+        // 有下一个单词，获取下一个单词
+        const nextIndex = currentSortIndex.value + 1;
+
+        console.log('排序模式 - 获取下一个单词，索引:', nextIndex);
+
+        // 调用云函数获取下一个排序单词
+        const res = await wx.cloud.callFunction({
+          name: 'getWordsBySorting',
+          data: {
+            bookId: currentLibraryId,
+            sortType: sortType.value,
+            currentIndex: nextIndex,
+            saveProgress: true
+          }
+        });
+
+        uni.hideLoading();
+
+        if (res.result.code === 0 && res.result.data && res.result.data.word) {
+          // 更新当前单词和索引
+          currentWord.value = res.result.data.word;
+          currentSortIndex.value = nextIndex;
+
+          // 更新音频源
+          updateAudioSources();
+
+          console.log('成功加载下一个排序单词，新索引:', nextIndex);
+        } else {
+          uni.showToast({
+            title: '获取单词失败',
+            icon: 'none'
+          });
+        }
+      } else {
+        // 没有更多单词
+        uni.hideLoading();
+        uni.showToast({
+          title: '恭喜你，学习完成！',
+          icon: 'success',
+          duration: 2000
+        });
+
+        // 延迟返回
+        setTimeout(() => {
+          uni.navigateBack();
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('获取下一个排序单词失败:', err);
+      uni.hideLoading();
+      uni.showToast({
+        title: '获取下一个单词失败',
+        icon: 'none'
+      });
+    }
+  } else if (isReviewModeActive.value || isQuizModeActive.value) {
     // 复习模式或小测验模式 - 获取下一个生疏单词
     try {
       // 使用更简洁的加载提示
@@ -678,7 +770,7 @@ const fetchWordData = (libraryId, wordRank = 1, isRetry = false) => {
       bookId: libraryId,
       wordRank: wordRank,
       wordCount: totalWords.value,
-      saveProgress: true // 保存学习进度
+      saveProgress: !isSortModeActive.value // 排序模式下不保存到正常学习进度
     }
   })
   .then(res => {
@@ -911,14 +1003,20 @@ onLoad(async (options) => {
   const isReview = options.isReview === 'true'; // 是否是复习模式
   const isQuiz = options.isQuiz === 'true'; // 是否是小测验模式
   const quizCount = options.quizCount ? parseInt(options.quizCount) : 50; // 小测验题数
+  const sortTypeParam = options.sortType || 'default'; // 排序类型
 
-  console.log('解析后的参数:', { bookId, libraryName, wordCount, isReview, isQuiz, quizCount });
+  console.log('解析后的参数:', { bookId, libraryName, wordCount, isReview, isQuiz, quizCount, sortTypeParam });
 
-  // 设置复习模式状态
+  // 设置模式状态
   isReviewModeActive.value = isReview;
   isQuizModeActive.value = isQuiz;
+  isSortModeActive.value = sortTypeParam !== 'default';
+  sortType.value = sortTypeParam;
+
   console.log('设置复习模式状态:', isReviewModeActive.value);
   console.log('设置小测验模式状态:', isQuizModeActive.value);
+  console.log('设置排序模式状态:', isSortModeActive.value);
+  console.log('设置排序类型:', sortType.value);
 
   // 设置总单词数
   if (wordCount > 0) {
@@ -928,7 +1026,111 @@ onLoad(async (options) => {
   // 检查用户登录状态
   checkLoginStatus();
 
-  if (isQuiz) {
+  if (isSortModeActive.value && bookId) {
+    // 排序模式 - 获取排序后的单词（支持断点续学）
+    console.log('排序模式 - 获取排序后的单词，排序类型:', sortType.value);
+
+    // 保存词库ID到响应式变量
+    libraryId.value = bookId;
+
+    // 显示加载提示
+    uni.showLoading({
+      title: '加载单词中...',
+      mask: true
+    });
+
+    try {
+      let startIndex = 0;
+
+      // 如果用户已登录，先获取排序学习进度
+      if (isLoggedIn.value) {
+        try {
+          const progressRes = await wx.cloud.callFunction({
+            name: 'getSortLearningProgress',
+            data: {
+              bookId: bookId,
+              sortType: sortType.value
+            }
+          });
+
+          console.log('获取排序学习进度结果:', progressRes.result);
+
+          if (progressRes.result.code === 0 && progressRes.result.data && progressRes.result.data.hasProgress) {
+            startIndex = progressRes.result.data.currentSortIndex || 0;
+            console.log('找到排序学习进度，从索引开始:', startIndex);
+
+            // 显示续学提示
+            if (startIndex > 0) {
+              uni.showToast({
+                title: `继续上次学习进度`,
+                icon: 'none',
+                duration: 1500
+              });
+            }
+          }
+        } catch (progressErr) {
+          console.error('获取排序学习进度失败:', progressErr);
+          // 进度获取失败不影响学习，从头开始
+        }
+      }
+
+      // 调用云函数获取排序后的单词
+      const res = await wx.cloud.callFunction({
+        name: 'getWordsBySorting',
+        data: {
+          bookId: bookId,
+          sortType: sortType.value,
+          currentIndex: startIndex,
+          saveProgress: true
+        }
+      });
+
+      console.log('获取排序单词结果:', res.result);
+
+      if (res.result.code === 0 && res.result.data && res.result.data.word) {
+        // 更新当前单词和相关数据
+        currentWord.value = res.result.data.word;
+        currentSortIndex.value = startIndex;
+        totalWords.value = res.result.data.totalWords;
+
+        // 更新音频源
+        updateAudioSources();
+
+        console.log('成功加载排序单词，索引:', startIndex);
+
+        // 设置页面标题
+        const sortLabel = sortOptions.value.find(opt => opt.value === sortType.value)?.label || '排序学习';
+        uni.setNavigationBarTitle({
+          title: `${libraryName} - ${sortLabel}`
+        });
+      } else {
+        // 获取失败
+        uni.showToast({
+          title: res.result.message || '获取单词失败',
+          icon: 'none',
+          duration: 2000
+        });
+
+        // 延迟返回
+        setTimeout(() => {
+          uni.navigateBack();
+        }, 2000);
+      }
+    } catch (err) {
+      console.error('获取排序单词失败:', err);
+      uni.showToast({
+        title: '获取单词失败',
+        icon: 'none'
+      });
+
+      // 延迟返回
+      setTimeout(() => {
+        uni.navigateBack();
+      }, 2000);
+    } finally {
+      uni.hideLoading();
+    }
+  } else if (isQuiz) {
     // 小测验模式 - 获取随机错题
     console.log('小测验模式 - 获取随机错题，题数:', quizCount);
 
