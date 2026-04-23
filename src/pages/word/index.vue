@@ -167,7 +167,7 @@
               <text class="stat-label">默认题数</text>
             </view>
             <view class="stat-item">
-              <text class="stat-value">10</text>
+              <text class="stat-value">1</text>
               <text class="stat-label">最少题数</text>
             </view>
           </view>
@@ -236,7 +236,8 @@
             <text class="input-suffix">题</text>
           </view>
           <view class="setting-tips">
-            <text class="tip-text">• 最少 10 题，最多 {{ totalUnknownWords }} 题</text>
+            <text class="tip-text">• 题数范围 1~200 题</text>
+            <text class="tip-text">• 当前可用错题 {{ totalUnknownWords }} 题，不足则按实际数量测验</text>
             <text class="tip-text">• 建议 20-50 题，效果最佳</text>
           </view>
         </view>
@@ -610,9 +611,9 @@ const startReviewingLibrary = (bookData) => {
 
 // 显示小测验设置弹窗
 const showQuizModal = () => {
-  if (totalUnknownWords.value < 10) {
+  if (totalUnknownWords.value < 1) {
     uni.showToast({
-      title: '错题数量不足10个，无法开始测验',
+      title: '暂无错题，无法开始测验',
       icon: 'none',
       duration: 2000
     });
@@ -635,17 +636,17 @@ const startQuiz = () => {
   const count = parseInt(quizWordCount.value) || Math.min(50, totalUnknownWords.value);
 
   // 验证题数
-  if (count < 10) {
+  if (count < 1) {
     uni.showToast({
-      title: '最少需要10题',
+      title: '最少需要1题',
       icon: 'none'
     });
     return;
   }
 
-  if (count > totalUnknownWords.value) {
+  if (count > 200) {
     uni.showToast({
-      title: `最多只能选择${totalUnknownWords.value}题`,
+      title: '最多只能选择200题',
       icon: 'none'
     });
     return;

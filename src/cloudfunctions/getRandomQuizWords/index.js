@@ -22,14 +22,14 @@ exports.main = async (event, context) => {
   }
   
   // 验证题数
-  if (count < 10) {
+  if (count < 1) {
     return {
       code: 1,
-      message: '最少需要10题',
+      message: '最少需要1题',
       data: null
     }
   }
-  
+
   if (count > 200) {
     return {
       code: 1,
@@ -56,19 +56,13 @@ exports.main = async (event, context) => {
     }
     
     const allUnknownWords = unknownWordsRes.data
-    
-    // 检查是否有足够的错题
-    if (allUnknownWords.length < count) {
-      return {
-        code: 1,
-        message: `错题数量不足，当前只有${allUnknownWords.length}个错题`,
-        data: null
-      }
-    }
-    
+
+    // 实际题数取请求数与可用错题数的较小值，错题不足时按实际数量返回
+    const actualCount = Math.min(count, allUnknownWords.length)
+
     // 随机选择指定数量的错题
     const shuffled = allUnknownWords.sort(() => 0.5 - Math.random())
-    const selectedWords = shuffled.slice(0, count)
+    const selectedWords = shuffled.slice(0, actualCount)
     
     // 按词库分组，方便后续处理
     const wordsByBook = {}
